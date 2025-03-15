@@ -1,3 +1,2 @@
-readline
-pathlib
-watchdog>=2.1.0
+
+PyGObject>=3.36.0
