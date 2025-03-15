@@ -8,6 +8,45 @@ gi.require_version('Gtk', '3.0')
 gi.require_version('Vte', '2.91')
 from gi.repository import Gtk, Gdk, Vte, GLib, Pango
 
+class TerminalTab(Gtk.Box):
+    def __init__(self, parent_window):
+        Gtk.Box.__init__(self, orientation=Gtk.Orientation.VERTICAL)
+        self.parent_window = parent_window
+        
+        # Create terminal
+        self.terminal = Vte.Terminal()
+        self.terminal.connect("child-exited", self.on_terminal_exit)
+        self.terminal.set_scrollback_lines(parent_window.config.get('scrollback_lines', 10000))
+        self.terminal.set_font_scale(parent_window.config.get('font_scale', 1.0))
+        
+        # Set colors from config with opacity
+        bg_color = parent_window.parse_color(
+            parent_window.config.get('background_color', '#000000'),
+            parent_window.config.get('background_opacity', 0.9)
+        )
+        fg_color = parent_window.parse_color(parent_window.config.get('foreground_color', '#FFFFFF'))
+        self.terminal.set_colors(fg_color, bg_color, [])
+        
+        self.pack_start(self.terminal, True, True, 0)
+        
+        # Start shell
+        self.terminal.spawn_sync(
+            Vte.PtyFlags.DEFAULT,
+            os.environ['HOME'],
+            ["/bin/bash"],
+            [],
+            GLib.SpawnFlags.DO_NOT_REAP_CHILD,
+            None,
+            None,
+        )
+
+    def on_terminal_exit(self, terminal, status):
+        notebook = self.get_parent()
+        if notebook and notebook.get_n_pages() > 1:
+            notebook.remove_page(notebook.page_num(self))
+        else:
+            self.parent_window.destroy()
+
 class HyxTerminal(Gtk.Window):
     def __init__(self):
         Gtk.Window.__init__(self, title="HyxTerminal")
@@ -29,8 +68,8 @@ class HyxTerminal(Gtk.Window):
         )
 
         # Create main vertical box
-        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        self.add(vbox)
+        self.vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.add(self.vbox)
 
         # Create menubar with solid background
         menubar = Gtk.MenuBar()
@@ -45,12 +84,16 @@ class HyxTerminal(Gtk.Window):
         """
         menubar_css.load_from_data(css.encode())
         menubar_style.add_provider(menubar_css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
-        vbox.pack_start(menubar, False, False, 0)
+        self.vbox.pack_start(menubar, False, False, 0)
 
         # File menu
         file_menu = Gtk.MenuItem.new_with_label("File")
         file_submenu = Gtk.Menu()
         file_menu.set_submenu(file_submenu)
+
+        new_tab = Gtk.MenuItem.new_with_label("New Tab")
+        new_tab.connect("activate", self.new_tab)
+        file_submenu.append(new_tab)
 
         new_window = Gtk.MenuItem.new_with_label("New Window")
         new_window.connect("activate", self.new_window)
@@ -71,34 +114,36 @@ class HyxTerminal(Gtk.Window):
         edit_submenu.append(preferences)
         menubar.append(edit_menu)
 
-        # Create terminal
-        self.terminal = Vte.Terminal()
-        self.terminal.connect("child-exited", self.on_terminal_exit)
-        self.terminal.set_scrollback_lines(self.config.get('scrollback_lines', 10000))
-        self.terminal.set_font_scale(self.config.get('font_scale', 1.0))
+        # Create notebook for tabs
+        self.notebook = Gtk.Notebook()
+        self.notebook.set_show_tabs(False)  # Initially hide tabs
+        self.notebook.connect("page-added", self.on_tab_added)
+        self.notebook.connect("page-removed", self.on_tab_removed)
         
-        # Set colors from config with opacity
-        bg_color = self.parse_color(
-            self.config.get('background_color', '#000000'),
-            self.config.get('background_opacity', 0.9)
+        # Style the notebook
+        notebook_css = Gtk.CssProvider()
+        notebook_css.load_from_data(f"""
+        notebook {{
+            background-color: {bg_color};
+        }}
+        notebook tab {{
+            background-color: {bg_color};
+            color: {self.config.get('foreground_color', '#FFFFFF')};
+            padding: 4px;
+        }}
+        notebook tab:checked {{
+            background-color: shade({bg_color}, 1.2);
+        }}
+        """.encode())
+        self.notebook.get_style_context().add_provider(
+            notebook_css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
         )
-        fg_color = self.parse_color(self.config.get('foreground_color', '#FFFFFF'))
-        self.terminal.set_colors(fg_color, bg_color, [])
-
-        # Add terminal to window
-        vbox.pack_start(self.terminal, True, True, 0)
-
-        # Start shell with proper exit handling
-        self.terminal.spawn_sync(
-            Vte.PtyFlags.DEFAULT,
-            os.environ['HOME'],
-            ["/bin/bash"],
-            [],
-            GLib.SpawnFlags.DO_NOT_REAP_CHILD,
-            None,
-            None,
-        )
-
+        
+        self.vbox.pack_start(self.notebook, True, True, 0)
+        
+        # Create first tab
+        self.new_tab()
+        
         # Key bindings
         self.connect("key-press-event", self.on_key_press)
 
@@ -314,6 +359,22 @@ class HyxTerminal(Gtk.Window):
         window = HyxTerminal()
         window.show_all()
 
+    def new_tab(self, widget=None):
+        """Add a new terminal tab"""
+        tab = TerminalTab(self)
+        label = Gtk.Label(label=f"Terminal {self.notebook.get_n_pages() + 1}")
+        self.notebook.append_page(tab, label)
+        self.notebook.set_current_page(-1)
+        tab.show_all()
+
+    def on_tab_added(self, notebook, child, page_num):
+        """Show tabs bar when there's more than one tab"""
+        self.notebook.set_show_tabs(notebook.get_n_pages() > 1)
+
+    def on_tab_removed(self, notebook, child, page_num):
+        """Hide tabs bar when only one tab remains"""
+        self.notebook.set_show_tabs(notebook.get_n_pages() > 1)
+
     def on_terminal_exit(self, terminal, status):
         """Handle terminal exit properly"""
         if self.get_property('is-active'):
@@ -324,15 +385,25 @@ class HyxTerminal(Gtk.Window):
     def on_key_press(self, widget, event):
         modifiers = event.state & Gtk.accelerator_get_default_mod_mask()
         
-        # Ctrl+Shift+C - Copy
-        if modifiers == (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.SHIFT_MASK) and event.keyval == Gdk.KEY_C:
-            self.terminal.copy_clipboard()
+        # Ctrl+Shift+T - New Tab
+        if modifiers == (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.SHIFT_MASK) and event.keyval == Gdk.KEY_T:
+            self.new_tab()
             return True
             
-        # Ctrl+Shift+V - Paste
-        if modifiers == (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.SHIFT_MASK) and event.keyval == Gdk.KEY_V:
-            self.terminal.paste_clipboard()
-            return True
+        # Get current terminal
+        current_page = self.notebook.get_current_page()
+        if current_page != -1:
+            current_terminal = self.notebook.get_nth_page(current_page).terminal
+            
+            # Ctrl+Shift+C - Copy
+            if modifiers == (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.SHIFT_MASK) and event.keyval == Gdk.KEY_C:
+                current_terminal.copy_clipboard()
+                return True
+                
+            # Ctrl+Shift+V - Paste
+            if modifiers == (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.SHIFT_MASK) and event.keyval == Gdk.KEY_V:
+                current_terminal.paste_clipboard()
+                return True
 
         return False
 
