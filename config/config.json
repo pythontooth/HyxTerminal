@@ -9,9 +9,5 @@
     "font_size": 11,
     "cursor_shape": "block",
     "cursor_blink_mode": "system",
-    "background_opacity": 0.9,
-    "wallpaper_path": "",
-    "wallpaper_opacity": 0.2,
-    "wallpaper_scale": "fill",
-    "wallpaper_enabled": false
+    "background_opacity": 0.9
 }

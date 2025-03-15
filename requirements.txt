@@ -1,2 +1,1 @@
 PyGObject>=3.36.0
-Pillow>=8.0.0

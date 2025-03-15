@@ -4,8 +4,6 @@ import gi
 import os
 import json
 from pathlib import Path
-from PIL import Image, ImageSequence
-import cairo
 gi.require_version('Gtk', '3.0')
 gi.require_version('Vte', '2.91')
 from gi.repository import Gtk, Gdk, Vte, GLib, Pango, GdkPixbuf
@@ -15,51 +13,23 @@ class TerminalTab(Gtk.Box):
         Gtk.Box.__init__(self, orientation=Gtk.Orientation.VERTICAL)
         self.parent_window = parent_window
         
-        # Create overlay for wallpaper support
-        self.overlay = Gtk.Overlay()
-        self.pack_start(self.overlay, True, True, 0)
-        
-        # Background image container with proper styling
-        self.background = Gtk.Image()
-        self.background.set_halign(Gtk.Align.FILL)
-        self.background.set_valign(Gtk.Align.FILL)
-        
-        # Add background FIRST (this ensures it stays at the bottom)
-        self.overlay.add(self.background)
-        
-        # Create terminal with transparency support
+        # Create terminal
         self.terminal = Vte.Terminal()
         self.terminal.connect("child-exited", self.on_terminal_exit)
         self.terminal.set_scrollback_lines(parent_window.config.get('scrollback_lines', 10000))
         self.terminal.set_font_scale(parent_window.config.get('font_scale', 1.0))
+        self.terminal.set_cursor_shape(self.get_cursor_shape(
+            parent_window.config.get('cursor_shape', 'block')
+        ))
         
-        # Set terminal transparency
-        self.terminal.set_clear_background(False)
-        self.terminal.set_opacity(0xFF)  # Make terminal fully opaque
+        self.pack_start(self.terminal, True, True, 0)
         
-        # Add terminal on TOP of the background
-        self.overlay.add_overlay(self.terminal)
-        # Make sure terminal gets input focus
-        self.terminal.set_can_focus(True)
-        self.background.set_can_focus(False)
-        
-        # Set colors from config with opacity
+        # Set up initial colors
         self.update_colors(
             parent_window.config.get('background_color', '#000000'),
             parent_window.config.get('foreground_color', '#FFFFFF'),
             parent_window.config.get('background_opacity', 0.9)
         )
-        
-        # Connect resize event
-        self.terminal.connect('size-allocate', self.on_terminal_resize)
-        
-        # Load wallpaper if configured
-        self.load_wallpaper()
-        
-        # GIF animation support
-        self.current_frame = 0
-        self.animation = None
-        self.animation_timeout = None
         
         # Start shell
         self.terminal.spawn_sync(
@@ -72,125 +42,28 @@ class TerminalTab(Gtk.Box):
             None,
         )
 
+    def get_cursor_shape(self, shape_name):
+        """Convert cursor shape name to VTE constant"""
+        shapes = {
+            'block': Vte.CursorShape.BLOCK,
+            'ibeam': Vte.CursorShape.IBEAM,
+            'underline': Vte.CursorShape.UNDERLINE
+        }
+        return shapes.get(shape_name, Vte.CursorShape.BLOCK)
+
+    def update_cursor(self, shape_name):
+        """Update terminal cursor shape"""
+        self.terminal.set_cursor_shape(self.get_cursor_shape(shape_name))
+
     def update_colors(self, bg_color, fg_color, opacity):
         """Update terminal colors and opacity"""
         bg = self.parent_window.parse_color(bg_color, opacity)
         fg = self.parent_window.parse_color(fg_color)
         self.terminal.set_colors(fg, bg, [])
-        # Ensure terminal transparency for wallpaper visibility
-        self.terminal.set_clear_background(True if self.parent_window.config.get('wallpaper_enabled', False) else False)
-
-    def load_wallpaper(self):
-        """Load and scale wallpaper image"""
-        if not self.parent_window.config.get('wallpaper_enabled', False):
-            self.background.clear()
-            return
-
-        wallpaper_path = self.parent_window.config.get('wallpaper_path')
-        if not wallpaper_path or not os.path.exists(wallpaper_path):
-            return
-
-        try:
-            # Get terminal size
-            terminal_rect = self.terminal.get_allocation()
-            term_width = terminal_rect.width or 800
-            term_height = terminal_rect.height or 600
-
-            if wallpaper_path.lower().endswith('.gif'):
-                self.load_gif_wallpaper(wallpaper_path, term_width, term_height)
-            else:
-                pixbuf = GdkPixbuf.Pixbuf.new_from_file(wallpaper_path)
-                scaled_pixbuf = self.scale_wallpaper(pixbuf, term_width, term_height)
-                self.background.set_from_pixbuf(scaled_pixbuf)
-
-            # Set wallpaper opacity (0-255)
-            opacity = int(self.parent_window.config.get('wallpaper_opacity', 0.2) * 255)
-            self.background.set_opacity(opacity)
-            
-            # Ensure background is visible
-            self.background.show()
-            
-            # Make sure terminal stays on top
-            self.terminal.get_parent().reorder_overlay(self.terminal, 1)
-
-        except Exception as e:
-            print(f"Error loading wallpaper: {e}")
-
-    def scale_wallpaper(self, pixbuf, target_width, target_height):
-        """Scale wallpaper according to configuration"""
-        orig_width = pixbuf.get_width()
-        orig_height = pixbuf.get_height()
-        scale_mode = self.parent_window.config.get('wallpaper_scale', 'fill')
-
-        if scale_mode == 'stretch':
-            return pixbuf.scale_simple(
-                target_width, target_height, GdkPixbuf.InterpType.BILINEAR
-            )
-        elif scale_mode == 'fit':
-            scale = min(target_width/orig_width, target_height/orig_height)
-        else:  # fill
-            scale = max(target_width/orig_width, target_height/orig_height)
-
-        new_width = int(orig_width * scale)
-        new_height = int(orig_height * scale)
-        scaled = pixbuf.scale_simple(
-            new_width, new_height, GdkPixbuf.InterpType.BILINEAR
-        )
-
-        if new_width > target_width or new_height > target_height:
-            # Crop to center
-            x = (new_width - target_width) // 2 if new_width > target_width else 0
-            y = (new_height - target_height) // 2 if new_height > target_height else 0
-            return GdkPixbuf.Pixbuf.new_subpixbuf(
-                scaled, x, y, target_width, target_height
-            )
-        return scaled
-
-    def load_gif_wallpaper(self, path, term_width, term_height):
-        self.animation = Image.open(path)
-        self.current_frame = 0
-        self.update_gif_frame(term_width, term_height)
-
-    def update_gif_frame(self, term_width, term_height):
-        if not self.animation:
-            return False
-
-        try:
-            self.animation.seek(self.current_frame)
-            frame = self.animation.convert('RGBA')
-            width, height = frame.size
-            bytes_data = frame.tobytes()
-            
-            pixbuf = GdkPixbuf.Pixbuf.new_from_data(
-                bytes_data,
-                GdkPixbuf.Colorspace.RGB,
-                True,
-                8,
-                width,
-                height,
-                width * 4
-            )
-            
-            scaled_pixbuf = self.scale_wallpaper(pixbuf, term_width, term_height)
-            self.background.set_from_pixbuf(scaled_pixbuf)
-            
-            # Move to next frame
-            self.current_frame = (self.current_frame + 1) % self.animation.n_frames
-            
-            # Schedule next frame update
-            delay = self.animation.info.get('duration', 100)  # Default to 100ms if no duration specified
-            self.animation_timeout = GLib.timeout_add(delay, self.update_gif_frame, term_width, term_height)
-            
-        except Exception as e:
-            print(f"Error updating GIF frame: {e}")
-            return False
-        
-        return False
 
     def on_terminal_resize(self, widget, allocation):
         """Handle terminal resize"""
-        if self.parent_window.config.get('wallpaper_enabled', False):
-            self.load_wallpaper()
+        pass
 
     def on_terminal_exit(self, terminal, status):
         notebook = self.get_parent()
@@ -198,6 +71,97 @@ class TerminalTab(Gtk.Box):
             notebook.remove_page(notebook.page_num(self))
         else:
             self.parent_window.destroy()
+
+class TabLabel(Gtk.Box):
+    def __init__(self, title, tab, notebook):
+        Gtk.Box.__init__(self, orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        self.notebook = notebook
+        self.tab = tab
+        self.is_editing = False
+        
+        # Create label container (for easier widget swapping)
+        self.label_container = Gtk.Box()
+        
+        # Create label
+        self.label = Gtk.Label(label=title)
+        self.label_container.add(self.label)
+        
+        # Create close button
+        close_button = Gtk.Button()
+        close_button.set_relief(Gtk.ReliefStyle.NONE)
+        close_button.set_focus_on_click(False)
+        close_button.add(Gtk.Image.new_from_icon_name("window-close", Gtk.IconSize.MENU))
+        close_button.connect('clicked', self.on_close_clicked)
+        
+        # Add double-click detection to the label container
+        event_box = Gtk.EventBox()
+        event_box.add(self.label_container)
+        event_box.connect('button-press-event', self.on_tab_clicked)
+        event_box.set_above_child(False)
+        
+        # Pack widgets
+        self.pack_start(event_box, True, True, 0)
+        self.pack_start(close_button, False, False, 0)
+        self.show_all()
+
+    def on_close_clicked(self, button):
+        if not self.is_editing:  # Prevent closing while editing
+            page_num = self.notebook.page_num(self.tab)
+            if page_num != -1:
+                self.notebook.remove_page(page_num)
+
+    def on_tab_clicked(self, widget, event):
+        if event.type == Gdk.EventType._2BUTTON_PRESS and not self.is_editing:
+            self.start_editing()
+            return True
+        return False
+
+    def start_editing(self):
+        self.is_editing = True
+        # Create entry widget
+        entry = Gtk.Entry()
+        entry.set_text(self.label.get_text())
+        entry.connect('activate', self.finish_editing)
+        entry.connect('focus-out-event', self.finish_editing)
+        entry.connect('key-press-event', self.on_entry_key_press)
+        
+        # Safely swap widgets
+        self.label.hide()
+        self.label_container.add(entry)
+        entry.show()
+        entry.grab_focus()
+
+    def finish_editing(self, widget, event=None):
+        if not self.is_editing:
+            return False
+            
+        try:
+            new_text = widget.get_text().strip()
+            if new_text:
+                self.label.set_text(new_text)
+            
+            # Safely restore label
+            widget.hide()
+            self.label_container.remove(widget)
+            self.label.show()
+            
+        except Exception as e:
+            print(f"Error while finishing edit: {e}")
+        
+        finally:
+            self.is_editing = False
+            
+        return False
+
+    def on_entry_key_press(self, widget, event):
+        # Handle Escape key to cancel editing
+        if event.keyval == Gdk.KEY_Escape:
+            self.is_editing = False
+            widget.hide()
+            self.label_container.remove(widget)
+            self.label.show()
+            return True
+        return False
 
 class HyxTerminal(Gtk.Window):
     def __init__(self):
@@ -309,10 +273,10 @@ class HyxTerminal(Gtk.Window):
             'background_color': '#000000',
             'foreground_color': '#FFFFFF',
             'background_opacity': 0.9,
-            'wallpaper_path': '',
-            'wallpaper_enabled': False,
-            'wallpaper_opacity': 0.2,
-            'wallpaper_scale': 'fill'
+            'font_family': 'Monospace',
+            'font_size': 11,
+            'cursor_shape': 'block',
+            'cursor_blink_mode': 'system'
         }
         
         if config_path.exists():
@@ -455,90 +419,16 @@ class HyxTerminal(Gtk.Window):
         cursor_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         cursor_label = Gtk.Label(label="Cursor Shape:")
         cursor_combo = Gtk.ComboBoxText()
-        for shape in ['block', 'ibeam', 'underline']:
+        shapes = ['block', 'ibeam', 'underline']
+        for shape in shapes:
             cursor_combo.append_text(shape)
-        cursor_combo.set_active(0)  # Set to current value
+        # Set active based on current config
+        current_shape = self.config.get('cursor_shape', 'block')
+        cursor_combo.set_active(shapes.index(current_shape))
         cursor_box.pack_start(cursor_label, False, False, 0)
         cursor_box.pack_start(cursor_combo, True, True, 0)
         term_box.add(cursor_box)
         box.add(term_frame)
-
-        # Wallpaper Settings
-        wallpaper_frame = Gtk.Frame(label="Wallpaper")
-        wallpaper_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        wallpaper_frame.add(wallpaper_box)
-
-        # Enable wallpaper checkbox
-        enable_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        enable_label = Gtk.Label(label="Enable Wallpaper:")
-        enable_switch = Gtk.Switch()
-        enable_switch.set_active(self.config.get('wallpaper_enabled', False))
-        enable_box.pack_start(enable_label, False, False, 0)
-        enable_box.pack_start(enable_switch, False, False, 0)
-        wallpaper_box.add(enable_box)
-
-        # Wallpaper opacity
-        wallpaper_opacity_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        wallpaper_opacity_label = Gtk.Label(label="Wallpaper Opacity:")
-        wallpaper_opacity_scale = Gtk.Scale.new_with_range(
-            Gtk.Orientation.HORIZONTAL, 0.0, 1.0, 0.05
-        )
-        wallpaper_opacity_scale.set_value(self.config.get('wallpaper_opacity', 0.2))
-        wallpaper_opacity_box.pack_start(wallpaper_opacity_label, False, False, 0)
-        wallpaper_opacity_box.pack_start(wallpaper_opacity_scale, True, True, 0)
-        wallpaper_box.add(wallpaper_opacity_box)
-
-        # Wallpaper scale mode
-        scale_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        scale_label = Gtk.Label(label="Scaling Mode:")
-        scale_combo = Gtk.ComboBoxText()
-        scale_modes = ['fill', 'fit', 'stretch']
-        current_mode = self.config.get('wallpaper_scale', 'fill')
-        
-        for i, mode in enumerate(scale_modes):
-            scale_combo.append_text(mode)
-            if mode == current_mode:
-                scale_combo.set_active(i)
-                
-        scale_box.pack_start(scale_label, False, False, 0)
-        scale_box.pack_start(scale_combo, True, True, 0)
-        wallpaper_box.add(scale_box)
-
-        # Wallpaper file chooser
-        chooser_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        wallpaper_label = Gtk.Label(label="Background Image:")
-        wallpaper_path = Gtk.Entry()
-        wallpaper_path.set_text(self.config.get('wallpaper_path', ''))
-        browse_button = Gtk.Button(label="Browse")
-
-        def on_browse_clicked(button):
-            file_dialog = Gtk.FileChooserDialog(
-                title="Choose Wallpaper",
-                parent=self,  # Use self instead of dialog
-                action=Gtk.FileChooserAction.OPEN
-            )
-            file_dialog.add_buttons(
-                Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
-                Gtk.STOCK_OPEN, Gtk.ResponseType.OK
-            )
-
-            filter_images = Gtk.FileFilter()
-            filter_images.set_name("Images")
-            filter_images.add_mime_type("image/*")
-            file_dialog.add_filter(filter_images)
-
-            response = file_dialog.run()
-            if response == Gtk.ResponseType.OK:
-                wallpaper_path.set_text(file_dialog.get_filename())
-            file_dialog.destroy()
-
-        browse_button.connect("clicked", on_browse_clicked)
-        
-        chooser_box.pack_start(wallpaper_label, False, False, 0)
-        chooser_box.pack_start(wallpaper_path, True, True, 0)
-        chooser_box.pack_start(browse_button, False, False, 0)
-        wallpaper_box.add(chooser_box)
-        box.add(wallpaper_frame)
 
         dialog.show_all()
         response = dialog.run()
@@ -554,12 +444,8 @@ class HyxTerminal(Gtk.Window):
                 'foreground_color': self.rgba_to_hex(fg_color.get_rgba()),
                 'font_family': font_button.get_font_desc().get_family(),
                 'font_size': font_button.get_font_desc().get_size() // 1000,
-                'cursor_shape': cursor_combo.get_active_text(),
-                'background_opacity': opacity_scale.get_value(),
-                'wallpaper_path': wallpaper_path.get_text(),
-                'wallpaper_enabled': enable_switch.get_active(),
-                'wallpaper_opacity': wallpaper_opacity_scale.get_value(),
-                'wallpaper_scale': scale_combo.get_active_text(),
+                'cursor_shape': shapes[cursor_combo.get_active()],
+                'background_opacity': opacity_scale.get_value()
             })
 
             # Apply changes to all terminals
@@ -572,7 +458,7 @@ class HyxTerminal(Gtk.Window):
                 tab.update_colors(bg_color, fg_color, opacity)
                 tab.terminal.set_font_scale(scale.get_value())
                 tab.terminal.set_scrollback_lines(int(scrollback_spin.get_value()))
-                tab.load_wallpaper()  # This will handle wallpaper updates
+                tab.update_cursor(shapes[cursor_combo.get_active()])
 
             self.resize(int(width_spin.get_value()), int(height_spin.get_value()))
             
@@ -614,8 +500,9 @@ class HyxTerminal(Gtk.Window):
     def new_tab(self, widget=None):
         """Add a new terminal tab"""
         tab = TerminalTab(self)
-        label = Gtk.Label(label=f"Terminal {self.notebook.get_n_pages() + 1}")
+        label = TabLabel(f"Terminal {self.notebook.get_n_pages() + 1}", tab, self.notebook)
         self.notebook.append_page(tab, label)
+        self.notebook.set_tab_reorderable(tab, True)  # Allow tab reordering
         self.notebook.set_current_page(-1)
         tab.show_all()
 
