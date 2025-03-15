@@ -1,0 +1,12 @@
+{
+    "window_width": 800,
+    "window_height": 600,
+    "scrollback_lines": 10000,
+    "font_scale": 1.0,
+    "background_color": "#000000",
+    "foreground_color": "#FFFFFF",
+    "font_family": "Monospace",
+    "font_size": 11,
+    "cursor_shape": "block",
+    "cursor_blink_mode": "system"
+}

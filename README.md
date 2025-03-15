@@ -35,10 +35,25 @@ Run the terminal:
 python3 hyxterminal.py
 ```
 
+## Configuration
+
+The terminal can be configured through `~/.config/hyxterminal/config.json`. Available options:
+
+- `window_width`: Initial window width (default: 800)
+- `window_height`: Initial window height (default: 600)
+- `scrollback_lines`: Number of lines to keep in history (default: 10000)
+- `font_scale`: Terminal font scaling (default: 1.0)
+- `background_color`: Terminal background color in hex (default: "#000000")
+- `foreground_color`: Terminal foreground color in hex (default: "#FFFFFF")
+
 ## Features
 
 - Basic terminal functionality
 - Copy/Paste support (Ctrl+Shift+C / Ctrl+Shift+V)
 - Scrollback buffer
 - Multiple window support
-```
+- Configurable appearance
+- Persistent settings
+- Enhanced scrollback support
+- Font scaling
+- Custom color schemes
