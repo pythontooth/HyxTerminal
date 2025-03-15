@@ -12,6 +12,15 @@ class HyxTerminal(Gtk.Window):
     def __init__(self):
         Gtk.Window.__init__(self, title="HyxTerminal")
         
+        # Enable transparency
+        screen = self.get_screen()
+        visual = screen.get_rgba_visual()
+        if visual and screen.is_composited():
+            self.set_visual(visual)
+        
+        # Set transparent background
+        self.set_app_paintable(True)
+        
         # Load config
         self.config = self.load_config()
         self.set_default_size(
@@ -23,8 +32,19 @@ class HyxTerminal(Gtk.Window):
         vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.add(vbox)
 
-        # Create menubar
+        # Create menubar with solid background
         menubar = Gtk.MenuBar()
+        menubar_style = menubar.get_style_context()
+        menubar_css = Gtk.CssProvider()
+        bg_color = self.config.get('background_color', '#000000')
+        css = f"""
+        menubar {{
+            background-color: {bg_color};
+            color: {self.config.get('foreground_color', '#FFFFFF')};
+        }}
+        """
+        menubar_css.load_from_data(css.encode())
+        menubar_style.add_provider(menubar_css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         vbox.pack_start(menubar, False, False, 0)
 
         # File menu
@@ -53,19 +73,22 @@ class HyxTerminal(Gtk.Window):
 
         # Create terminal
         self.terminal = Vte.Terminal()
+        self.terminal.connect("child-exited", self.on_terminal_exit)
         self.terminal.set_scrollback_lines(self.config.get('scrollback_lines', 10000))
         self.terminal.set_font_scale(self.config.get('font_scale', 1.0))
         
-        # Set colors from config
-        bg_color = self.parse_color(self.config.get('background_color', '#000000'))
+        # Set colors from config with opacity
+        bg_color = self.parse_color(
+            self.config.get('background_color', '#000000'),
+            self.config.get('background_opacity', 0.9)
+        )
         fg_color = self.parse_color(self.config.get('foreground_color', '#FFFFFF'))
-        self.terminal.set_color_background(bg_color)
-        self.terminal.set_color_foreground(fg_color)
+        self.terminal.set_colors(fg_color, bg_color, [])
 
         # Add terminal to window
         vbox.pack_start(self.terminal, True, True, 0)
 
-        # Start shell
+        # Start shell with proper exit handling
         self.terminal.spawn_sync(
             Vte.PtyFlags.DEFAULT,
             os.environ['HOME'],
@@ -87,7 +110,8 @@ class HyxTerminal(Gtk.Window):
             'scrollback_lines': 10000,
             'font_scale': 1.0,
             'background_color': '#000000',
-            'foreground_color': '#FFFFFF'
+            'foreground_color': '#FFFFFF',
+            'background_opacity': 0.9
         }
         
         if config_path.exists():
@@ -98,13 +122,19 @@ class HyxTerminal(Gtk.Window):
                 return default_config
         return default_config
 
-    def parse_color(self, color_str):
+    def parse_color(self, color_str, opacity=1.0):
+        """Parse hex color string to Gdk.RGBA with optional opacity"""
         if color_str.startswith('#'):
             r = int(color_str[1:3], 16) / 255.0
             g = int(color_str[3:5], 16) / 255.0
             b = int(color_str[5:7], 16) / 255.0
-            return Gdk.RGBA(r, g, b, 1)
-        return Gdk.RGBA(0, 0, 0, 1)
+            color = Gdk.RGBA()
+            color.red = r
+            color.green = g
+            color.blue = b
+            color.alpha = opacity
+            return color
+        return None
 
     def show_preferences(self, widget):
         dialog = Gtk.Dialog(
@@ -174,21 +204,28 @@ class HyxTerminal(Gtk.Window):
 
         bg_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         bg_label = Gtk.Label(label="Background:")
-        bg_color = Gtk.ColorButton.new_with_rgba(
-            self.parse_color(self.config.get('background_color', '#000000'))
-        )
+        bg_color = Gtk.ColorButton()
+        bg_color.set_rgba(self.parse_color(self.config.get('background_color', '#000000')))
         bg_box.pack_start(bg_label, False, False, 0)
         bg_box.pack_start(bg_color, True, True, 0)
         colors_box.add(bg_box)
 
         fg_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         fg_label = Gtk.Label(label="Foreground:")
-        fg_color = Gtk.ColorButton.new_with_rgba(
-            self.parse_color(self.config.get('foreground_color', '#FFFFFF'))
-        )
+        fg_color = Gtk.ColorButton()
+        fg_color.set_rgba(self.parse_color(self.config.get('foreground_color', '#FFFFFF')))
         fg_box.pack_start(fg_label, False, False, 0)
         fg_box.pack_start(fg_color, True, True, 0)
         colors_box.add(fg_box)
+
+        # Add opacity control
+        opacity_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        opacity_label = Gtk.Label(label="Background Opacity:")
+        opacity_scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0.0, 1.0, 0.1)
+        opacity_scale.set_value(self.config.get('background_opacity', 0.9))
+        opacity_box.pack_start(opacity_label, False, False, 0)
+        opacity_box.pack_start(opacity_scale, True, True, 0)
+        colors_box.add(opacity_box)
         box.add(colors_frame)
 
         # Terminal Settings
@@ -229,16 +266,32 @@ class HyxTerminal(Gtk.Window):
                 'foreground_color': self.rgba_to_hex(fg_color.get_rgba()),
                 'font_family': font_button.get_font_desc().get_family(),
                 'font_size': font_button.get_font_desc().get_size() // 1000,
-                'cursor_shape': cursor_combo.get_active_text()
+                'cursor_shape': cursor_combo.get_active_text(),
+                'background_opacity': opacity_scale.get_value(),
             })
 
             # Apply changes
             self.terminal.set_font_scale(scale.get_value())
-            self.terminal.set_color_background(bg_color.get_rgba())
+            bg_rgba = bg_color.get_rgba()
+            bg_rgba.alpha = opacity_scale.get_value()
+            self.terminal.set_color_background(bg_rgba)
             self.terminal.set_color_foreground(fg_color.get_rgba())
             self.terminal.set_scrollback_lines(int(scrollback_spin.get_value()))
             self.resize(int(width_spin.get_value()), int(height_spin.get_value()))
             
+            # Update menubar style when colors change
+            menubar = self.get_children()[0].get_children()[0]  # Get menubar from vbox
+            menubar_style = menubar.get_style_context()
+            menubar_css = Gtk.CssProvider()
+            css = f"""
+            menubar {{
+                background-color: {self.config['background_color']};
+                color: {self.config['foreground_color']};
+            }}
+            """
+            menubar_css.load_from_data(css.encode())
+            menubar_style.add_provider(menubar_css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
             # Save configuration
             self.save_config()
 
@@ -261,8 +314,12 @@ class HyxTerminal(Gtk.Window):
         window = HyxTerminal()
         window.show_all()
 
-    def on_terminal_exit(self, widget, status):
-        Gtk.main_quit()
+    def on_terminal_exit(self, terminal, status):
+        """Handle terminal exit properly"""
+        if self.get_property('is-active'):
+            self.destroy()
+        else:
+            Gtk.main_quit()
 
     def on_key_press(self, widget, event):
         modifiers = event.state & Gtk.accelerator_get_default_mod_mask()
@@ -281,6 +338,9 @@ class HyxTerminal(Gtk.Window):
 
 if __name__ == "__main__":
     win = HyxTerminal()
-    win.connect("destroy", Gtk.main_quit)
+    win.connect("delete-event", Gtk.main_quit)
     win.show_all()
-    Gtk.main()
+    try:
+        Gtk.main()
+    except KeyboardInterrupt:
+        win.destroy()

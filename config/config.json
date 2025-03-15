@@ -8,5 +8,6 @@
     "font_family": "Monospace",
     "font_size": 11,
     "cursor_shape": "block",
-    "cursor_blink_mode": "system"
+    "cursor_blink_mode": "system",
+    "background_opacity": 0.9
 }
