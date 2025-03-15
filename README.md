@@ -1,13 +1,13 @@
-# HyxTerminal v0.3
+# HyxTerminal v0.5
 
 A smart terminal emulator with advanced features.
 
 ## Features
-- Persistent command history
-- Configuration system
-- Command suggestions
-- Enhanced alias system
-- All v0.2 features
+- Plugin system
+- Command chaining
+- Themes support
+- Command history search
+- All v0.3 features
 
 ## Installation
 ```bash
@@ -20,20 +20,25 @@ python src/main.py
 ```
 
 ## Commands
-- `help` - Show available commands and their usage
-- `clear` - Clear the screen
-- `history` - Show command history
-- `alias` - Create command aliases
-- `config` - View or edit configuration
-- `suggest` - Get command suggestions
-- `exit` - Exit the terminal
+- All v0.3 commands
+- `theme` - Change terminal theme
+- `plugins` - Manage plugins
+- `search` - Search command history
+- Custom commands from plugins
 
-## Configuration
-Configuration is stored in `~/.hyx_config.json`:
-```json
-{
-  "history_file": "~/.hyx_history",
-  "max_history": 1000,
-  "suggest_commands": true,
-  "aliases": {}
-}
+## Command Chaining
+Chain multiple commands with &&:
+```bash
+clear && ls && echo "Done"
+```
+
+## Plugins
+Place plugin files in `src/plugins/`. Example:
+```python
+def setup(terminal):
+    # Register commands here
+    return {"name": "My Plugin"}
+```
+
+## Themes
+Custom themes can be defined in `src/themes.json`

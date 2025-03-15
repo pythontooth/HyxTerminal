@@ -1,0 +1,14 @@
+{
+    "dark": {
+        "prompt": "hyx❯ ",
+        "text_color": "white",
+        "error_color": "red",
+        "success_color": "green"
+    },
+    "light": {
+        "prompt": "hyx$ ",
+        "text_color": "black",
+        "error_color": "darkred",
+        "success_color": "darkgreen"
+    }
+}

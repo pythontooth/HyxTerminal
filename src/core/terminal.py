@@ -3,8 +3,10 @@ import sys
 import readline
 import json
 import atexit
+import importlib.util
 from typing import List, Optional, Dict, Callable
 from pathlib import Path
+from datetime import datetime
 
 class Terminal:
     def __init__(self):
@@ -14,9 +16,12 @@ class Terminal:
         self.command_help: Dict[str, str] = {}
         self.aliases: Dict[str, str] = {}
         self.config = self._load_config()
+        self.plugins: Dict[str, object] = {}
+        self.themes = self._load_themes()
         self._load_commands()
         self._setup_readline()
         self._load_history()
+        self._load_plugins()
 
     def _load_config(self) -> dict:
         config_path = Path.home() / '.hyx_config.json'
@@ -24,7 +29,11 @@ class Terminal:
             "history_file": str(Path.home() / '.hyx_history'),
             "max_history": 1000,
             "suggest_commands": True,
-            "aliases": {}
+            "aliases": {},
+            "theme": "default",
+            "plugins_enabled": True,
+            "ai_suggestions": True,
+            "max_chain_depth": 10
         }
         
         if config_path.exists():
@@ -45,6 +54,42 @@ class Terminal:
             pass
         atexit.register(readline.write_history_file, history_file)
 
+    def _load_plugins(self):
+        if not self.config["plugins_enabled"]:
+            return
+
+        plugin_dir = Path(__file__).parent.parent / "plugins"
+        if not plugin_dir.exists():
+            return
+
+        for plugin_file in plugin_dir.glob("*.py"):
+            try:
+                spec = importlib.util.spec_from_file_location(
+                    plugin_file.stem, plugin_file
+                )
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                if hasattr(module, "setup"):
+                    plugin = module.setup(self)
+                    self.plugins[plugin_file.stem] = plugin
+                    print(f"Loaded plugin: {plugin_file.stem}")
+            except Exception as e:
+                print(f"Failed to load plugin {plugin_file}: {e}")
+
+    def _load_themes(self):
+        theme_file = Path(__file__).parent.parent / "themes.json"
+        default_theme = {
+            "prompt": "hyx> ",
+            "text_color": "white",
+            "error_color": "red",
+            "success_color": "green"
+        }
+        
+        if theme_file.exists():
+            with open(theme_file) as f:
+                return {**{"default": default_theme}, **json.load(f)}
+        return {"default": default_theme}
+
     def _load_commands(self):
         self.register_command("help", self._help_command, "Show available commands and their usage")
         self.register_command("clear", self.clear, "Clear the screen")
@@ -53,6 +98,9 @@ class Terminal:
         self.register_command("alias", self._alias_command, "Create command alias (Usage: alias name='command')")
         self.register_command("config", self._config_command, "View or edit configuration")
         self.register_command("suggest", self._suggest_command, "Get command suggestions")
+        self.register_command("theme", self._theme_command, "Change terminal theme")
+        self.register_command("plugins", self._plugins_command, "List/enable/disable plugins")
+        self.register_command("search", self._search_command, "Search command history")
 
     def register_command(self, name: str, func: Callable, help_text: str):
         self.commands[name] = func
@@ -144,12 +192,66 @@ class Terminal:
             else:
                 print(f"Unknown config key: {key}")
 
+    def _theme_command(self, *args):
+        if not args:
+            print("\nAvailable themes:")
+            for theme in self.themes:
+                print(f"  {theme}")
+            return
+        
+        theme = args[0]
+        if theme in self.themes:
+            self.config["theme"] = theme
+            self._save_config()
+            print(f"Theme changed to {theme}")
+        else:
+            print(f"Theme {theme} not found")
+
+    def _plugins_command(self, *args):
+        if not args:
+            print("\nLoaded plugins:")
+            for name, plugin in self.plugins.items():
+                print(f"  {name}")
+            return
+
+        action, plugin = args[0], args[1]
+        if action == "disable":
+            # Implementation for disabling plugins
+            pass
+
+    def _search_command(self, *args):
+        if not args:
+            print("Usage: search <pattern>")
+            return
+
+        pattern = args[0].lower()
+        matches = [cmd for cmd in self.history if pattern in cmd.lower()]
+        if matches:
+            print("\nMatching commands:")
+            for idx, cmd in enumerate(matches[-5:], 1):
+                print(f"  {idx}: {cmd}")
+        else:
+            print("No matching commands found")
+
+    def _execute_chain(self, commands: List[str]):
+        if len(commands) > self.config["max_chain_depth"]:
+            raise Exception("Command chain too deep")
+
+        for cmd in commands:
+            parts = cmd.strip().split()
+            cmd_name, args = parts[0], parts[1:]
+            
+            if cmd_name in self.commands:
+                self.commands[cmd_name](*args)
+            else:
+                os.system(cmd)
+
     def clear(self):
         os.system('clear' if os.name == 'posix' else 'cls')
 
     def run(self):
         self.clear()
-        print("Welcome to HyxTerminal v0.3")
+        print(f"Welcome to HyxTerminal v0.5 ({len(self.plugins)} plugins loaded)")
         print("Type 'help' for available commands")
         
         while True:
@@ -160,6 +262,12 @@ class Terminal:
 
                 self.history.append(command)
                 
+                # Handle command chaining
+                if " && " in command:
+                    commands = command.split(" && ")
+                    self._execute_chain(commands)
+                    continue
+
                 parts = command.split()
                 cmd_name, args = parts[0], parts[1:]
                 
