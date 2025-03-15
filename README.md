@@ -1,14 +1,13 @@
-# HyxTerminal v0.2
+# HyxTerminal v0.3
 
 A smart terminal emulator with advanced features.
 
 ## Features
-- Command registration system
-- Enhanced command history
-- Improved tab completion
-- Built-in help system
-- Command aliases
-- Clear screen functionality
+- Persistent command history
+- Configuration system
+- Command suggestions
+- Enhanced alias system
+- All v0.2 features
 
 ## Installation
 ```bash
@@ -25,9 +24,16 @@ python src/main.py
 - `clear` - Clear the screen
 - `history` - Show command history
 - `alias` - Create command aliases
+- `config` - View or edit configuration
+- `suggest` - Get command suggestions
 - `exit` - Exit the terminal
 
-## Creating Aliases
-```bash
-alias ll='ls -la'
-alias gst='git status'
+## Configuration
+Configuration is stored in `~/.hyx_config.json`:
+```json
+{
+  "history_file": "~/.hyx_history",
+  "max_history": 1000,
+  "suggest_commands": true,
+  "aliases": {}
+}
