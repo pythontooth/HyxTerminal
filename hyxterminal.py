@@ -19,25 +19,28 @@ class TerminalTab(Gtk.Box):
         self.overlay = Gtk.Overlay()
         self.pack_start(self.overlay, True, True, 0)
         
-        # Create terminal first (will be under the wallpaper)
-        self.terminal = Vte.Terminal()
-        self.terminal.connect("child-exited", self.on_terminal_exit)
-        self.terminal.set_scrollback_lines(parent_window.config.get('scrollback_lines', 10000))
-        self.terminal.set_font_scale(parent_window.config.get('font_scale', 1.0))
-        
-        # Make terminal background transparent to see wallpaper
-        self.terminal.set_clear_background(False)
-        
-        # Add terminal as the base layer
-        self.overlay.add(self.terminal)
-        
         # Background image container with proper styling
         self.background = Gtk.Image()
         self.background.set_halign(Gtk.Align.FILL)
         self.background.set_valign(Gtk.Align.FILL)
         
-        # Add background on top but make it a background layer
-        self.overlay.add_overlay(self.background)
+        # Add background FIRST (this ensures it stays at the bottom)
+        self.overlay.add(self.background)
+        
+        # Create terminal with transparency support
+        self.terminal = Vte.Terminal()
+        self.terminal.connect("child-exited", self.on_terminal_exit)
+        self.terminal.set_scrollback_lines(parent_window.config.get('scrollback_lines', 10000))
+        self.terminal.set_font_scale(parent_window.config.get('font_scale', 1.0))
+        
+        # Set terminal transparency
+        self.terminal.set_clear_background(False)
+        self.terminal.set_opacity(0xFF)  # Make terminal fully opaque
+        
+        # Add terminal on TOP of the background
+        self.overlay.add_overlay(self.terminal)
+        # Make sure terminal gets input focus
+        self.terminal.set_can_focus(True)
         self.background.set_can_focus(False)
         
         # Set colors from config with opacity
@@ -74,6 +77,8 @@ class TerminalTab(Gtk.Box):
         bg = self.parent_window.parse_color(bg_color, opacity)
         fg = self.parent_window.parse_color(fg_color)
         self.terminal.set_colors(fg, bg, [])
+        # Ensure terminal transparency for wallpaper visibility
+        self.terminal.set_clear_background(True if self.parent_window.config.get('wallpaper_enabled', False) else False)
 
     def load_wallpaper(self):
         """Load and scale wallpaper image"""
@@ -88,7 +93,7 @@ class TerminalTab(Gtk.Box):
         try:
             # Get terminal size
             terminal_rect = self.terminal.get_allocation()
-            term_width = terminal_rect.width or 800  # Fallback size
+            term_width = terminal_rect.width or 800
             term_height = terminal_rect.height or 600
 
             if wallpaper_path.lower().endswith('.gif'):
@@ -98,10 +103,15 @@ class TerminalTab(Gtk.Box):
                 scaled_pixbuf = self.scale_wallpaper(pixbuf, term_width, term_height)
                 self.background.set_from_pixbuf(scaled_pixbuf)
 
-            # Ensure background is visible but behind text
-            self.background.show()
+            # Set wallpaper opacity (0-255)
             opacity = int(self.parent_window.config.get('wallpaper_opacity', 0.2) * 255)
             self.background.set_opacity(opacity)
+            
+            # Ensure background is visible
+            self.background.show()
+            
+            # Make sure terminal stays on top
+            self.terminal.get_parent().reorder_overlay(self.terminal, 1)
 
         except Exception as e:
             print(f"Error loading wallpaper: {e}")
