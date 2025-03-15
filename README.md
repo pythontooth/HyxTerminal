@@ -1,13 +1,14 @@
-# HyxTerminal v0.5
+# HyxTerminal v0.6
 
 A smart terminal emulator with advanced features.
 
 ## Features
-- Plugin system
-- Command chaining
-- Themes support
-- Command history search
-- All v0.3 features
+- All v0.5 features
+- Command pipelines with |> operator
+- Plugin hot-reloading
+- AI-powered command suggestions
+- Command grouping and categories
+- Enhanced help system
 
 ## Installation
 ```bash
@@ -20,25 +21,24 @@ python src/main.py
 ```
 
 ## Commands
-- All v0.3 commands
-- `theme` - Change terminal theme
-- `plugins` - Manage plugins
-- `search` - Search command history
-- Custom commands from plugins
+All v0.5 commands plus:
+- Grouped command listing
+- Detailed command help
+- Pipeline support
 
-## Command Chaining
-Chain multiple commands with &&:
+## Command Pipelines
+Chain commands with output passing:
 ```bash
-clear && ls && echo "Done"
+ls |> grep .py |> wc -l
 ```
 
-## Plugins
-Place plugin files in `src/plugins/`. Example:
-```python
-def setup(terminal):
-    # Register commands here
-    return {"name": "My Plugin"}
-```
+## Plugin Hot-Reloading
+Plugins are automatically reloaded when their source files change.
 
-## Themes
-Custom themes can be defined in `src/themes.json`
+## Command Groups
+Commands are now organized into groups:
+- general
+- file
+- system
+- network
+- etc.

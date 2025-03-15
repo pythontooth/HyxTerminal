@@ -4,9 +4,12 @@ import readline
 import json
 import atexit
 import importlib.util
-from typing import List, Optional, Dict, Callable
+import watchdog.observers
+import watchdog.events
+from typing import List, Optional, Dict, Callable, Any
 from pathlib import Path
 from datetime import datetime
+from .ai_suggest import AISuggester
 
 class Terminal:
     def __init__(self):
@@ -22,6 +25,49 @@ class Terminal:
         self._setup_readline()
         self._load_history()
         self._load_plugins()
+        self.ai_suggester = AISuggester()
+        self.command_groups: Dict[str, List[str]] = {}
+        self.plugin_observer = None
+        self._setup_plugin_watcher()
+        
+    def _setup_plugin_watcher(self):
+        if not self.config["plugins_enabled"]:
+            return
+            
+        class PluginHandler(watchdog.events.FileSystemEventHandler):
+            def __init__(self, terminal):
+                self.terminal = terminal
+
+            def on_modified(self, event):
+                if event.src_path.endswith('.py'):
+                    self.terminal._reload_plugin(Path(event.src_path))
+
+        plugin_dir = Path(__file__).parent.parent / "plugins"
+        if plugin_dir.exists():
+            self.plugin_observer = watchdog.observers.Observer()
+            self.plugin_observer.schedule(PluginHandler(self), str(plugin_dir))
+            self.plugin_observer.start()
+
+    def _reload_plugin(self, plugin_path: Path):
+        try:
+            name = plugin_path.stem
+            if name in self.plugins:
+                # Remove old commands
+                old_commands = [cmd for cmd, func in self.commands.items() 
+                              if getattr(func, '__plugin__', '') == name]
+                for cmd in old_commands:
+                    del self.commands[cmd]
+                    del self.command_help[cmd]
+
+            # Load new version
+            spec = importlib.util.spec_from_file_location(name, plugin_path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            if hasattr(module, "setup"):
+                self.plugins[name] = module.setup(self)
+                print(f"Reloaded plugin: {name}")
+        except Exception as e:
+            print(f"Failed to reload plugin {plugin_path}: {e}")
 
     def _load_config(self) -> dict:
         config_path = Path.home() / '.hyx_config.json'
@@ -102,9 +148,13 @@ class Terminal:
         self.register_command("plugins", self._plugins_command, "List/enable/disable plugins")
         self.register_command("search", self._search_command, "Search command history")
 
-    def register_command(self, name: str, func: Callable, help_text: str):
+    def register_command(self, name: str, func: Callable, help_text: str, group: str = "general"):
         self.commands[name] = func
         self.command_help[name] = help_text
+        self.command_groups.setdefault(group, []).append(name)
+        # Mark command with plugin name for hot-reloading
+        if sys._getframe(1).f_globals.get('__file__', '').endswith('.py'):
+            setattr(func, '__plugin__', Path(sys._getframe(1).f_globals['__file__']).stem)
 
     def _setup_readline(self):
         readline.parse_and_bind('tab: complete')
@@ -118,9 +168,19 @@ class Terminal:
         return commands[state] if state < len(commands) else None
 
     def _help_command(self, *args):
-        print("\nAvailable commands:")
-        for cmd, help_text in self.command_help.items():
-            print(f"  {cmd:<15} - {help_text}")
+        if not args:
+            print("\nCommand Groups:")
+            for group, cmds in self.command_groups.items():
+                print(f"\n{group.title()}:")
+                for cmd in cmds:
+                    print(f"  {cmd:<15} - {self.command_help[cmd]}")
+        else:
+            # Show detailed help for specific command
+            cmd = args[0]
+            if cmd in self.commands:
+                print(f"\n{cmd} - {self.command_help[cmd]}")
+                if hasattr(self.commands[cmd], '__doc__'):
+                    print(f"\nDetails:\n{self.commands[cmd].__doc__}")
 
     def _history_command(self, *args):
         for idx, cmd in enumerate(self.history, 1):
@@ -246,12 +306,34 @@ class Terminal:
             else:
                 os.system(cmd)
 
+    def _process_pipeline(self, commands: List[str]) -> Any:
+        result = None
+        for cmd in commands:
+            parts = cmd.strip().split()
+            cmd_name, args = parts[0], parts[1:]
+            
+            if cmd_name in self.commands:
+                # Capture output
+                import io
+                import contextlib
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    self.commands[cmd_name](*args, input_data=result)
+                result = output.getvalue()
+            else:
+                # Handle system commands in pipeline
+                import subprocess
+                proc = subprocess.run(cmd, shell=True, input=str(result).encode() if result else None,
+                                   capture_output=True, text=True)
+                result = proc.stdout
+        return result
+
     def clear(self):
         os.system('clear' if os.name == 'posix' else 'cls')
 
     def run(self):
         self.clear()
-        print(f"Welcome to HyxTerminal v0.5 ({len(self.plugins)} plugins loaded)")
+        print(f"Welcome to HyxTerminal v0.6 ({len(self.plugins)} plugins loaded)")
         print("Type 'help' for available commands")
         
         while True:
@@ -262,8 +344,16 @@ class Terminal:
 
                 self.history.append(command)
                 
+                # Handle pipelines
+                if " |> " in command:
+                    commands = command.split(" |> ")
+                    result = self._process_pipeline(commands)
+                    if result:
+                        print(result.strip())
+                    continue
+                    
                 # Handle command chaining
-                if " && " in command:
+                elif " && " in command:
                     commands = command.split(" && ")
                     self._execute_chain(commands)
                     continue
