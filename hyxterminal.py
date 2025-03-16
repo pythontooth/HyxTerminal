@@ -1,243 +1,12 @@
 #!/usr/bin/env python3
 
 import gi
-import os
-import json
-from pathlib import Path
-import subprocess
 gi.require_version('Gtk', '3.0')
-gi.require_version('Vte', '2.91')
-from gi.repository import Gtk, Gdk, Vte, GLib, Pango, GdkPixbuf
+from gi.repository import Gtk, Gdk
 
-class TerminalTab(Gtk.Box):
-    def __init__(self, parent_window):
-        Gtk.Box.__init__(self, orientation=Gtk.Orientation.VERTICAL)
-        self.parent_window = parent_window
-        
-        # Create terminal
-        self.terminal = Vte.Terminal()
-        self.terminal.connect("child-exited", self.on_terminal_exit)
-        self.terminal.set_scrollback_lines(parent_window.config.get('scrollback_lines', 10000))
-        self.terminal.set_font_scale(parent_window.config.get('font_scale', 1.0))
-        self.terminal.set_cursor_shape(self.get_cursor_shape(
-            parent_window.config.get('cursor_shape', 'block')
-        ))
-        
-        self.pack_start(self.terminal, True, True, 0)
-        
-        # Set up initial colors
-        self.update_colors(
-            parent_window.config.get('background_color', '#000000'),
-            parent_window.config.get('foreground_color', '#FFFFFF'),
-            parent_window.config.get('background_opacity', 0.9)
-        )
-        
-        # Simple hint support
-        self.hint_text = ""
-        self.hint_timeout = None
-        self.terminal.connect('contents-changed', self.on_contents_changed)
-        self.terminal.connect('key-press-event', self.on_key_press)
-        
-        # Start shell with proper flags
-        self.terminal.spawn_async(
-            Vte.PtyFlags.DEFAULT,
-            os.environ['HOME'],
-            ["/bin/bash"],
-            [],
-            GLib.SpawnFlags.DEFAULT,  # Changed from DO_NOT_REAP_CHILD
-            None,
-            None,
-            -1,
-            None,
-            None
-        )
-
-    def get_cursor_shape(self, shape_name):
-        """Convert cursor shape name to VTE constant"""
-        shapes = {
-            'block': Vte.CursorShape.BLOCK,
-            'ibeam': Vte.CursorShape.IBEAM,
-            'underline': Vte.CursorShape.UNDERLINE
-        }
-        return shapes.get(shape_name, Vte.CursorShape.BLOCK)
-
-    def update_cursor(self, shape_name):
-        """Update terminal cursor shape"""
-        self.terminal.set_cursor_shape(self.get_cursor_shape(shape_name))
-
-    def update_colors(self, bg_color, fg_color, opacity):
-        """Update terminal colors and opacity"""
-        bg = self.parent_window.parse_color(bg_color, opacity)
-        fg = self.parent_window.parse_color(fg_color)
-        self.terminal.set_colors(fg, bg, [])
-
-    def on_terminal_resize(self, widget, allocation):
-        """Handle terminal resize"""
-        pass
-
-    def on_terminal_exit(self, terminal, status):
-        notebook = self.get_parent()
-        if notebook and notebook.get_n_pages() > 1:
-            notebook.remove_page(notebook.page_num(self))
-        else:
-            self.parent_window.destroy()
-
-    def on_key_press(self, widget, event):
-        """Handle key events for visual hints"""
-        keyval = event.keyval
-        if keyval in (Gdk.KEY_Tab, Gdk.KEY_Return, Gdk.KEY_space):
-            self.clear_hint()
-            return False
-        return False
-
-    def on_contents_changed(self, terminal):
-        """Schedule hint check when content changes"""
-        if self.hint_timeout:
-            GLib.source_remove(self.hint_timeout)
-        self.hint_timeout = GLib.timeout_add(500, self.check_hint)
-
-    def clear_hint(self):
-        """Clear any visible hint"""
-        if self.hint_text:
-            self.terminal.feed(f"\033[{len(self.hint_text)}D\033[K".encode())
-            self.hint_text = ""
-        if self.hint_timeout:
-            GLib.source_remove(self.hint_timeout)
-            self.hint_timeout = None
-
-    def check_hint(self):
-        """Show completion hint for current text"""
-        try:
-            # Get current command using newer VTE method
-            col = self.terminal.get_cursor_position()[1]
-            row = self.terminal.get_cursor_position()[0]
-            text = self.terminal.get_text(lambda *a: False, None)[0]  # Get text without attributes
-            
-            # Get current line
-            lines = text.splitlines()
-            if not lines or row >= len(lines):
-                return False
-            
-            current_line = lines[row]
-            if not current_line or col > len(current_line):
-                return False
-
-            # Get current word
-            words = current_line[:col].split()
-            if not words:
-                return False
-            current_word = words[-1]
-
-            if current_word:
-                # Get completion suggestion
-                cmd = ["bash", "-c", f"compgen -c '{current_word}' | head -n 1"]
-                result = subprocess.run(cmd, capture_output=True, text=True)
-                suggestion = result.stdout.strip()
-
-                # Show hint if valid
-                if suggestion and suggestion.startswith(current_word) and suggestion != current_word:
-                    hint = suggestion[len(current_word):]
-                    self.clear_hint()
-                    self.hint_text = hint
-                    self.terminal.feed(f"\033[2;37m{hint}\033[0m".encode())
-                    self.terminal.feed(f"\033[{len(hint)}D".encode())
-        except Exception as e:
-            print(f"Hint error: {e}")
-            self.clear_hint()
-
-        self.hint_timeout = None
-        return False
-
-class TabLabel(Gtk.Box):
-    def __init__(self, title, tab, notebook):
-        Gtk.Box.__init__(self, orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-        self.notebook = notebook
-        self.tab = tab
-        self.is_editing = False
-        
-        # Create label container (for easier widget swapping)
-        self.label_container = Gtk.Box()
-        
-        # Create label
-        self.label = Gtk.Label(label=title)
-        self.label_container.add(self.label)
-        
-        # Create close button
-        close_button = Gtk.Button()
-        close_button.set_relief(Gtk.ReliefStyle.NONE)
-        close_button.set_focus_on_click(False)
-        close_button.add(Gtk.Image.new_from_icon_name("window-close", Gtk.IconSize.MENU))
-        close_button.connect('clicked', self.on_close_clicked)
-        
-        # Add double-click detection to the label container
-        event_box = Gtk.EventBox()
-        event_box.add(self.label_container)
-        event_box.connect('button-press-event', self.on_tab_clicked)
-        event_box.set_above_child(False)
-        
-        # Pack widgets
-        self.pack_start(event_box, True, True, 0)
-        self.pack_start(close_button, False, False, 0)
-        self.show_all()
-
-    def on_close_clicked(self, button):
-        if not self.is_editing:  # Prevent closing while editing
-            page_num = self.notebook.page_num(self.tab)
-            if page_num != -1:
-                self.notebook.remove_page(page_num)
-
-    def on_tab_clicked(self, widget, event):
-        if event.type == Gdk.EventType._2BUTTON_PRESS and not self.is_editing:
-            self.start_editing()
-            return True
-        return False
-
-    def start_editing(self):
-        self.is_editing = True
-        # Create entry widget
-        entry = Gtk.Entry()
-        entry.set_text(self.label.get_text())
-        entry.connect('activate', self.finish_editing)
-        entry.connect('focus-out-event', self.finish_editing)
-        entry.connect('key-press-event', self.on_entry_key_press)
-        
-        # Safely swap widgets
-        self.label.hide()
-        self.label_container.add(entry)
-        entry.show()
-        entry.grab_focus()
-
-    def finish_editing(self, widget, event=None):
-        if not self.is_editing:
-            return False
-            
-        try:
-            new_text = widget.get_text().strip()
-            if new_text:
-                self.label.set_text(new_text)
-            
-            # Safely restore label
-            widget.hide()
-            self.label_container.remove(widget)
-            self.label.show()
-            
-        except Exception as e:
-            print(f"Error while finishing edit: {e}")
-        
-        finally:
-            self.is_editing = False
-            
-        return False
-
-    def on_entry_key_press(self, widget, event):
-        # Handle Escape key to cancel editing
-        if event.keyval == Gdk.KEY_Escape:
-            self.is_editing = False
-            widget.hide()
-            self.label_container.remove(widget)
-            self.label.show()
-            return True
-        return False
+from modules.terminal_tab import TerminalTab
+from modules.tab_label import TabLabel
+import modules.config as config
 
 class HyxTerminal(Gtk.Window):
     def __init__(self):
@@ -253,7 +22,7 @@ class HyxTerminal(Gtk.Window):
         self.set_app_paintable(True)
         
         # Load config
-        self.config = self.load_config()
+        self.config = config.load_config()
         self.set_default_size(
             self.config.get('window_width', 800),
             self.config.get('window_height', 600)
@@ -339,44 +108,6 @@ class HyxTerminal(Gtk.Window):
         # Key bindings
         self.connect("key-press-event", self.on_key_press)
 
-    def load_config(self):
-        config_path = Path.home() / '.config' / 'hyxterminal' / 'config.json'
-        default_config = {
-            'window_width': 800,
-            'window_height': 600,
-            'scrollback_lines': 10000,
-            'font_scale': 1.0,
-            'background_color': '#000000',
-            'foreground_color': '#FFFFFF',
-            'background_opacity': 0.9,
-            'font_family': 'Monospace',
-            'font_size': 11,
-            'cursor_shape': 'block',
-            'cursor_blink_mode': 'system'
-        }
-        
-        if config_path.exists():
-            try:
-                with open(config_path) as f:
-                    return {**default_config, **json.load(f)}
-            except Exception:
-                return default_config
-        return default_config
-
-    def parse_color(self, color_str, opacity=1.0):
-        """Parse hex color string to Gdk.RGBA with optional opacity"""
-        if color_str.startswith('#'):
-            r = int(color_str[1:3], 16) / 255.0
-            g = int(color_str[3:5], 16) / 255.0
-            b = int(color_str[5:7], 16) / 255.0
-            color = Gdk.RGBA()
-            color.red = r
-            color.green = g
-            color.blue = b
-            color.alpha = opacity
-            return color
-        return None
-
     def get_current_terminal(self):
         """Get the terminal from the current tab"""
         current_page = self.notebook.get_current_page()
@@ -456,7 +187,7 @@ class HyxTerminal(Gtk.Window):
         bg_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         bg_label = Gtk.Label(label="Background:")
         bg_color = Gtk.ColorButton()
-        bg_color.set_rgba(self.parse_color(self.config.get('background_color', '#000000')))
+        bg_color.set_rgba(config.parse_color(self.config.get('background_color', '#000000')))
         bg_box.pack_start(bg_label, False, False, 0)
         bg_box.pack_start(bg_color, True, True, 0)
         colors_box.add(bg_box)
@@ -464,7 +195,7 @@ class HyxTerminal(Gtk.Window):
         fg_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         fg_label = Gtk.Label(label="Foreground:")
         fg_color = Gtk.ColorButton()
-        fg_color.set_rgba(self.parse_color(self.config.get('foreground_color', '#FFFFFF')))
+        fg_color.set_rgba(config.parse_color(self.config.get('foreground_color', '#FFFFFF')))
         fg_box.pack_start(fg_label, False, False, 0)
         fg_box.pack_start(fg_color, True, True, 0)
         colors_box.add(fg_box)
@@ -516,8 +247,8 @@ class HyxTerminal(Gtk.Window):
                 'window_height': int(height_spin.get_value()),
                 'scrollback_lines': int(scrollback_spin.get_value()),
                 'font_scale': scale.get_value(),
-                'background_color': self.rgba_to_hex(bg_color.get_rgba()),
-                'foreground_color': self.rgba_to_hex(fg_color.get_rgba()),
+                'background_color': config.rgba_to_hex(bg_color.get_rgba()),
+                'foreground_color': config.rgba_to_hex(fg_color.get_rgba()),
                 'font_family': font_button.get_font_desc().get_family(),
                 'font_size': font_button.get_font_desc().get_size() // 1000,
                 'cursor_shape': shapes[cursor_combo.get_active()],
@@ -552,22 +283,9 @@ class HyxTerminal(Gtk.Window):
             menubar_style.add_provider(menubar_css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
             # Save configuration
-            self.save_config()
+            config.save_config(self.config)
 
         dialog.destroy()
-
-    def rgba_to_hex(self, rgba):
-        return '#{:02x}{:02x}{:02x}'.format(
-            int(rgba.red * 255),
-            int(rgba.green * 255),
-            int(rgba.blue * 255)
-        )
-
-    def save_config(self):
-        config_path = Path.home() / '.config' / 'hyxterminal' / 'config.json'
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(config_path, 'w') as f:
-            json.dump(self.config, f, indent=4)
 
     def new_window(self, widget):
         window = HyxTerminal()
@@ -589,13 +307,6 @@ class HyxTerminal(Gtk.Window):
     def on_tab_removed(self, notebook, child, page_num):
         """Hide tabs bar when only one tab remains"""
         self.notebook.set_show_tabs(notebook.get_n_pages() > 1)
-
-    def on_terminal_exit(self, terminal, status):
-        """Handle terminal exit properly"""
-        if self.get_property('is-active'):
-            self.destroy()
-        else:
-            Gtk.main_quit()
 
     def on_key_press(self, widget, event):
         modifiers = event.state & Gtk.accelerator_get_default_mod_mask()

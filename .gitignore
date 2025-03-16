@@ -1,0 +1,107 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+.Python
+env/
+venv/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyInstaller distribution
+#   Note: comment out the following lines to enable debugging with PyInstaller
+#   See https://github.com/pyinstaller/pyinstaller/wiki/How-to-debug-PyInstaller-built-apps
+dist/*
+build/*
+!dist/.gitignore
+!build/.gitignore
+
+# Environments
+.env
+.venv
+venv
+ENV
+env.bak
+venv.bak
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Celery Beat DB file
+celerybeat-schedule
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+mypy-report/
+mypy-html-report/
+
+# Environments
+.env
+.venv
+venv
+ENV
+env.bak
+venv.bak
+
+# OS generated files #
+######################
+.DS_Store
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+[Dd]esktop.ini
+*.swp
+*.swo
+*~
+*.tmp
+
+# VS Code
+.vscode/

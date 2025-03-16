@@ -1,59 +1,87 @@
 # HyxTerminal
 
-A simple terminal emulator built with Python, GTK, and VTE.
+A modern, customizable GTK-based terminal emulator written in Python.
+
+## Features
+
+- Multiple tabs with drag-and-drop reordering
+- Customizable appearance (colors, opacity, fonts)
+- Command auto-completion hints
+- Configurable cursor shapes
+- Adjustable scrollback buffer
+- Full Unicode support
+- Keyboard shortcuts
 
 ## Requirements
 
-- Python 3.6+
-- GTK 3
+- Python 3.x
+- GTK 3.0
 - VTE 2.91
 - PyGObject
 
 ## Installation
 
-1. Install system dependencies:
+1. Install the required dependencies:
 
 ```bash
 # Ubuntu/Debian
-sudo apt-get install python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-vte-2.91
+sudo apt-get install python3 python3-gi gir1.2-gtk-3.0 gir1.2-vte-2.91
 
 # Fedora
-sudo dnf install python3-gobject gtk3 vte291
+sudo dnf install python3 python3-gobject gtk3 vte291
 ```
 
-2. Install Python dependencies:
+2. Clone the repository:
 
 ```bash
-pip install -r requirements.txt
+git clone https://github.com/yourusername/hyxterminal.git
+cd hyxterminal
 ```
 
-## Usage
-
-Run the terminal:
+3. Run the terminal:
 
 ```bash
 python3 hyxterminal.py
 ```
 
+## Keyboard Shortcuts
+
+- `Ctrl+Shift+T`: New tab
+- `Ctrl+Shift+C`: Copy selected text
+- `Ctrl+Shift+V`: Paste from clipboard
+
 ## Configuration
 
-The terminal can be configured through `~/.config/hyxterminal/config.json`. Available options:
+Configuration is stored in `~/.config/hyxterminal/config.json`. Settings include:
 
-- `window_width`: Initial window width (default: 800)
-- `window_height`: Initial window height (default: 600)
-- `scrollback_lines`: Number of lines to keep in history (default: 10000)
-- `font_scale`: Terminal font scaling (default: 1.0)
-- `background_color`: Terminal background color in hex (default: "#000000")
-- `foreground_color`: Terminal foreground color in hex (default: "#FFFFFF")
+- Window dimensions
+- Font family and size
+- Colors and opacity
+- Scrollback buffer size
+- Cursor shape
 
 ## Features
 
-- Basic terminal functionality
-- Copy/Paste support (Ctrl+Shift+C / Ctrl+Shift+V)
-- Scrollback buffer
-- Multiple window support
-- Configurable appearance
-- Persistent settings
-- Enhanced scrollback support
-- Font scaling
-- Custom color schemes
+- Tab Management
+  - Create/close tabs
+  - Reorder tabs via drag and drop
+  - Double-click tab to rename
+  
+- Appearance
+  - Customizable background opacity
+  - Configurable font and size
+  - Adjustable color scheme
+  
+- Terminal Features
+  - Command auto-completion hints
+  - Configurable scrollback buffer
+  - Multiple cursor shapes
+  - Copy/paste support
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
