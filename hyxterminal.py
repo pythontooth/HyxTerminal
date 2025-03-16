@@ -2,7 +2,7 @@
 
 import gi
 gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk, Gdk
+from gi.repository import Gtk, Gdk, Pango  # Add Pango import here
 
 from modules.terminal_tab import TerminalTab
 from modules.tab_label import TabLabel
@@ -53,8 +53,28 @@ class HyxTerminal(Gtk.Window):
         file_menu.set_submenu(file_submenu)
 
         new_tab = Gtk.MenuItem.new_with_label("New Tab")
-        new_tab.connect("activate", self.new_tab)
+        new_tab.connect("activate", lambda w: self.new_tab())
         file_submenu.append(new_tab)
+
+        # Add preset submenu
+        preset_menu = Gtk.MenuItem.new_with_label("New Tab with Preset")
+        preset_submenu = Gtk.Menu()
+        preset_menu.set_submenu(preset_submenu)
+        file_submenu.append(preset_menu)
+
+        # Add preset options
+        presets = [
+            ("1 Terminal", "single"),
+            ("2 Horizontal Terminals", "horizontal"),
+            ("2 Vertical Terminals", "vertical"),
+            ("4 Terminals", "quad"),
+            ("Custom...", "custom")
+        ]
+        
+        for label, layout in presets:
+            item = Gtk.MenuItem.new_with_label(label)
+            item.connect("activate", lambda w, l: self.new_tab(l), layout)
+            preset_submenu.append(item)
 
         new_window = Gtk.MenuItem.new_with_label("New Window")
         new_window.connect("activate", self.new_window)
@@ -291,14 +311,15 @@ class HyxTerminal(Gtk.Window):
         window = HyxTerminal()
         window.show_all()
 
-    def new_tab(self, widget=None):
-        """Add a new terminal tab"""
-        tab = TerminalTab(self)
+    def new_tab(self, layout="single"):
+        """Add a new terminal tab with specified layout"""
+        tab = TerminalTab(self, layout)
         label = TabLabel(f"Terminal {self.notebook.get_n_pages() + 1}", tab, self.notebook)
-        self.notebook.append_page(tab, label)
-        self.notebook.set_tab_reorderable(tab, True)  # Allow tab reordering
-        self.notebook.set_current_page(-1)
+        page_num = self.notebook.append_page(tab, label)
+        self.notebook.set_tab_reorderable(tab, True)
         tab.show_all()
+        # Switch to the new tab explicitly
+        self.notebook.set_current_page(page_num)
 
     def on_tab_added(self, notebook, child, page_num):
         """Show tabs bar when there's more than one tab"""
