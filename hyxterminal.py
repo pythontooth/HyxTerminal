@@ -4,6 +4,7 @@ import gi
 import os
 import json
 from pathlib import Path
+import subprocess
 gi.require_version('Gtk', '3.0')
 gi.require_version('Vte', '2.91')
 from gi.repository import Gtk, Gdk, Vte, GLib, Pango, GdkPixbuf
@@ -31,15 +32,24 @@ class TerminalTab(Gtk.Box):
             parent_window.config.get('background_opacity', 0.9)
         )
         
-        # Start shell
-        self.terminal.spawn_sync(
+        # Simple hint support
+        self.hint_text = ""
+        self.hint_timeout = None
+        self.terminal.connect('contents-changed', self.on_contents_changed)
+        self.terminal.connect('key-press-event', self.on_key_press)
+        
+        # Start shell with proper flags
+        self.terminal.spawn_async(
             Vte.PtyFlags.DEFAULT,
             os.environ['HOME'],
             ["/bin/bash"],
             [],
-            GLib.SpawnFlags.DO_NOT_REAP_CHILD,
+            GLib.SpawnFlags.DEFAULT,  # Changed from DO_NOT_REAP_CHILD
             None,
             None,
+            -1,
+            None,
+            None
         )
 
     def get_cursor_shape(self, shape_name):
@@ -71,6 +81,72 @@ class TerminalTab(Gtk.Box):
             notebook.remove_page(notebook.page_num(self))
         else:
             self.parent_window.destroy()
+
+    def on_key_press(self, widget, event):
+        """Handle key events for visual hints"""
+        keyval = event.keyval
+        if keyval in (Gdk.KEY_Tab, Gdk.KEY_Return, Gdk.KEY_space):
+            self.clear_hint()
+            return False
+        return False
+
+    def on_contents_changed(self, terminal):
+        """Schedule hint check when content changes"""
+        if self.hint_timeout:
+            GLib.source_remove(self.hint_timeout)
+        self.hint_timeout = GLib.timeout_add(500, self.check_hint)
+
+    def clear_hint(self):
+        """Clear any visible hint"""
+        if self.hint_text:
+            self.terminal.feed(f"\033[{len(self.hint_text)}D\033[K".encode())
+            self.hint_text = ""
+        if self.hint_timeout:
+            GLib.source_remove(self.hint_timeout)
+            self.hint_timeout = None
+
+    def check_hint(self):
+        """Show completion hint for current text"""
+        try:
+            # Get current command using newer VTE method
+            col = self.terminal.get_cursor_position()[1]
+            row = self.terminal.get_cursor_position()[0]
+            text = self.terminal.get_text(lambda *a: False, None)[0]  # Get text without attributes
+            
+            # Get current line
+            lines = text.splitlines()
+            if not lines or row >= len(lines):
+                return False
+            
+            current_line = lines[row]
+            if not current_line or col > len(current_line):
+                return False
+
+            # Get current word
+            words = current_line[:col].split()
+            if not words:
+                return False
+            current_word = words[-1]
+
+            if current_word:
+                # Get completion suggestion
+                cmd = ["bash", "-c", f"compgen -c '{current_word}' | head -n 1"]
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                suggestion = result.stdout.strip()
+
+                # Show hint if valid
+                if suggestion and suggestion.startswith(current_word) and suggestion != current_word:
+                    hint = suggestion[len(current_word):]
+                    self.clear_hint()
+                    self.hint_text = hint
+                    self.terminal.feed(f"\033[2;37m{hint}\033[0m".encode())
+                    self.terminal.feed(f"\033[{len(hint)}D".encode())
+        except Exception as e:
+            print(f"Hint error: {e}")
+            self.clear_hint()
+
+        self.hint_timeout = None
+        return False
 
 class TabLabel(Gtk.Box):
     def __init__(self, title, tab, notebook):
