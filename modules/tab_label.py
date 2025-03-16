@@ -69,6 +69,10 @@ class TabLabel(Gtk.Box):
             new_text = widget.get_text().strip()
             if new_text:
                 self.label.set_text(new_text)
+                # Update the Go to menu when tab name changes
+                window = self.get_toplevel()
+                if isinstance(window, Gtk.Window):
+                    window.update_goto_menu()
             
             # Safely restore label
             widget.hide()

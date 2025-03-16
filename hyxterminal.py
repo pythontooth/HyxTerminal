@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 
 import gi
+import re
 gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk, Gdk, Pango  # Add Pango import here
+gi.require_version('Vte', '2.91')
+from gi.repository import Gtk, Gdk, Pango, Vte, GLib
 
 from modules.terminal_tab import TerminalTab
 from modules.tab_label import TabLabel
@@ -52,11 +54,11 @@ class HyxTerminal(Gtk.Window):
         file_submenu = Gtk.Menu()
         file_menu.set_submenu(file_submenu)
 
-        new_tab = Gtk.MenuItem.new_with_label("New Tab")
+        # File menu items with accelerators
+        new_tab = Gtk.MenuItem.new_with_label("New Tab" + " " * 13 + "Ctrl+Shift+T")
         new_tab.connect("activate", lambda w: self.new_tab())
         file_submenu.append(new_tab)
 
-        # Add preset submenu
         preset_menu = Gtk.MenuItem.new_with_label("New Tab with Preset")
         preset_submenu = Gtk.Menu()
         preset_menu.set_submenu(preset_submenu)
@@ -80,7 +82,21 @@ class HyxTerminal(Gtk.Window):
         new_window.connect("activate", self.new_window)
         file_submenu.append(new_window)
 
-        quit_item = Gtk.MenuItem.new_with_label("Quit")
+        file_submenu.append(Gtk.SeparatorMenuItem())
+
+        close_tab = Gtk.MenuItem.new_with_label("Close Tab" + " " * 11 + "Ctrl+Shift+W")
+        close_tab.connect("activate", self.close_current_tab)
+        file_submenu.append(close_tab)
+
+        file_submenu.append(Gtk.SeparatorMenuItem())
+
+        preferences = Gtk.MenuItem.new_with_label("Preferences...")
+        preferences.connect("activate", self.show_preferences)
+        file_submenu.append(preferences)
+
+        file_submenu.append(Gtk.SeparatorMenuItem())
+
+        quit_item = Gtk.MenuItem.new_with_label("Quit" + " " * 18 + "Ctrl+Q")
         quit_item.connect("activate", Gtk.main_quit)
         file_submenu.append(quit_item)
         menubar.append(file_menu)
@@ -90,10 +106,98 @@ class HyxTerminal(Gtk.Window):
         edit_submenu = Gtk.Menu()
         edit_menu.set_submenu(edit_submenu)
 
-        preferences = Gtk.MenuItem.new_with_label("Preferences")
-        preferences.connect("activate", self.show_preferences)
-        edit_submenu.append(preferences)
+        copy_item = Gtk.MenuItem.new_with_label("Copy Selection" + " " * 6 + "Ctrl+Shift+C")
+        copy_item.connect("activate", self.copy_selection)
+        edit_submenu.append(copy_item)
+
+        paste_item = Gtk.MenuItem.new_with_label("Paste Clipboard" + " " * 5 + "Ctrl+Shift+V")
+        paste_item.connect("activate", self.paste_clipboard)
+        edit_submenu.append(paste_item)
+
+        paste_selection = Gtk.MenuItem.new_with_label("Paste Selection" + " " * 5 + "Shift+Insert")
+        paste_selection.connect("activate", self.paste_selection)
+        edit_submenu.append(paste_selection)
+
+        edit_submenu.append(Gtk.SeparatorMenuItem())
+
+        zoom_in = Gtk.MenuItem.new_with_label("Zoom In" + " " * 15 + "Ctrl++")
+        zoom_in.connect("activate", self.zoom_in)
+        edit_submenu.append(zoom_in)
+
+        zoom_out = Gtk.MenuItem.new_with_label("Zoom Out" + " " * 12 + "Ctrl+-")
+        zoom_out.connect("activate", self.zoom_out)
+        edit_submenu.append(zoom_out)
+
+        zoom_reset = Gtk.MenuItem.new_with_label("Zoom Reset" + " " * 9 + "Ctrl+0")
+        zoom_reset.connect("activate", self.zoom_reset)
+        edit_submenu.append(zoom_reset)
+
         menubar.append(edit_menu)
+
+        # Actions menu
+        actions_menu = Gtk.MenuItem.new_with_label("Actions")
+        actions_submenu = Gtk.Menu()
+        actions_menu.set_submenu(actions_submenu)
+
+        # Clear Terminal
+        clear_terminal = Gtk.MenuItem.new_with_label("Clear Active Terminal" + " " * 4 + "Ctrl+Shift+X")
+        clear_terminal.connect("activate", self.clear_active_terminal)
+        actions_submenu.append(clear_terminal)
+
+        actions_submenu.append(Gtk.SeparatorMenuItem())
+
+        # Tab navigation
+        next_tab = Gtk.MenuItem.new_with_label("Next Tab" + " " * 16 + "Ctrl+PgUp")
+        next_tab.connect("activate", self.next_tab)
+        actions_submenu.append(next_tab)
+
+        prev_tab = Gtk.MenuItem.new_with_label("Previous Tab" + " " * 12 + "Ctrl+PgDown")
+        prev_tab.connect("activate", self.previous_tab)
+        actions_submenu.append(prev_tab)
+
+        # Go to terminal submenu
+        goto_menu = Gtk.MenuItem.new_with_label("Go to")
+        goto_submenu = Gtk.Menu()
+        goto_menu.set_submenu(goto_submenu)
+        actions_submenu.append(goto_menu)
+
+        actions_submenu.append(Gtk.SeparatorMenuItem())
+
+        # Split options
+        split_h = Gtk.MenuItem.new_with_label("Split Terminal Horizontally")
+        split_h.connect("activate", self.split_horizontal)
+        actions_submenu.append(split_h)
+
+        split_v = Gtk.MenuItem.new_with_label("Split Terminal Vertically")
+        split_v.connect("activate", self.split_vertical)
+        actions_submenu.append(split_v)
+
+        actions_submenu.append(Gtk.SeparatorMenuItem())
+
+        # Find
+        find_item = Gtk.MenuItem.new_with_label("Find..." + " " * 16 + "Ctrl+Shift+F")
+        find_item.connect("activate", self.show_find_dialog)
+        actions_submenu.append(find_item)
+
+        menubar.append(actions_menu)
+
+        # View menu
+        view_menu = Gtk.MenuItem.new_with_label("View")
+        view_submenu = Gtk.Menu()
+        view_menu.set_submenu(view_submenu)
+        menubar.append(view_menu)
+
+        # Plugins menu
+        plugins_menu = Gtk.MenuItem.new_with_label("Plugins")
+        plugins_submenu = Gtk.Menu()
+        plugins_menu.set_submenu(plugins_submenu)
+        menubar.append(plugins_menu)
+
+        # Help menu
+        help_menu = Gtk.MenuItem.new_with_label("Help")
+        help_submenu = Gtk.Menu()
+        help_menu.set_submenu(help_submenu)
+        menubar.append(help_menu)
 
         # Create notebook for tabs
         self.notebook = Gtk.Notebook()
@@ -137,7 +241,7 @@ class HyxTerminal(Gtk.Window):
 
     def show_preferences(self, widget):
         dialog = Gtk.Dialog(
-            title="Preferences",
+            title="Preferences...",
             parent=self,
             flags=0
         )
@@ -320,6 +424,13 @@ class HyxTerminal(Gtk.Window):
         tab.show_all()
         # Switch to the new tab explicitly
         self.notebook.set_current_page(page_num)
+        # Update the Go to menu
+        self.update_goto_menu()
+
+    def close_current_tab(self, widget):
+        current_page = self.notebook.get_current_page()
+        if current_page != -1:
+            self.notebook.remove_page(current_page)
 
     def on_tab_added(self, notebook, child, page_num):
         """Show tabs bar when there's more than one tab"""
@@ -332,27 +443,238 @@ class HyxTerminal(Gtk.Window):
     def on_key_press(self, widget, event):
         modifiers = event.state & Gtk.accelerator_get_default_mod_mask()
         
-        # Ctrl+Shift+T - New Tab
-        if modifiers == (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.SHIFT_MASK) and event.keyval == Gdk.KEY_T:
-            self.new_tab()
-            return True
-            
-        # Get current terminal
-        current_page = self.notebook.get_current_page()
-        if current_page != -1:
-            current_terminal = self.notebook.get_nth_page(current_page).terminal
-            
-            # Ctrl+Shift+C - Copy
-            if modifiers == (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.SHIFT_MASK) and event.keyval == Gdk.KEY_C:
-                current_terminal.copy_clipboard()
+        # Control pressed
+        if modifiers == Gdk.ModifierType.CONTROL_MASK:
+            if event.keyval in (Gdk.KEY_plus, Gdk.KEY_equal):
+                self.zoom_in(None)
                 return True
-                
-            # Ctrl+Shift+V - Paste
-            if modifiers == (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.SHIFT_MASK) and event.keyval == Gdk.KEY_V:
-                current_terminal.paste_clipboard()
+            elif event.keyval == Gdk.KEY_minus:
+                self.zoom_out(None)
+                return True
+            elif event.keyval in (Gdk.KEY_0, Gdk.KEY_KP_0):
+                self.zoom_reset(None)
                 return True
 
+        # Ctrl+Shift combinations
+        if modifiers == (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.SHIFT_MASK):
+            if event.keyval == Gdk.KEY_T:
+                self.new_tab()
+                return True
+            elif event.keyval == Gdk.KEY_W:
+                self.close_current_tab(None)
+                return True
+            elif event.keyval == Gdk.KEY_C:
+                self.copy_selection(None)
+                return True
+            elif event.keyval == Gdk.KEY_V:
+                self.paste_clipboard(None)
+                return True
+            elif event.keyval == Gdk.KEY_X:
+                self.clear_active_terminal(None)
+                return True
+            elif event.keyval == Gdk.KEY_F:
+                self.show_find_dialog(None)
+                return True
+
+        # Handle Ctrl+PgUp/PgDown
+        if modifiers == Gdk.ModifierType.CONTROL_MASK:
+            if event.keyval == Gdk.KEY_Page_Up:
+                self.next_tab(None)
+                return True
+            elif event.keyval == Gdk.KEY_Page_Down:
+                self.previous_tab(None)
+                return True
+
+        # Shift+Insert
+        if modifiers == Gdk.ModifierType.SHIFT_MASK and event.keyval == Gdk.KEY_Insert:
+            self.paste_selection(None)
+            return True
+
         return False
+
+    # Add new methods for edit menu actions
+    def copy_selection(self, widget):
+        terminal = self.get_current_terminal()
+        if terminal:
+            terminal.copy_clipboard()
+
+    def paste_clipboard(self, widget):
+        terminal = self.get_current_terminal()
+        if terminal:
+            terminal.paste_clipboard()
+
+    def paste_selection(self, widget):
+        terminal = self.get_current_terminal()
+        if terminal:
+            terminal.paste_primary()
+
+    def zoom_in(self, widget):
+        terminal = self.get_current_terminal()
+        if terminal:
+            current_scale = terminal.get_font_scale()
+            terminal.set_font_scale(current_scale + 0.1)
+
+    def zoom_out(self, widget):
+        terminal = self.get_current_terminal()
+        if terminal:
+            current_scale = terminal.get_font_scale()
+            terminal.set_font_scale(max(0.1, current_scale - 0.1))
+
+    def zoom_reset(self, widget):
+        terminal = self.get_current_terminal()
+        if terminal:
+            terminal.set_font_scale(1.0)
+
+    def clear_active_terminal(self, widget):
+        terminal = self.get_current_terminal()
+        if terminal:
+            # Send the clear command instead of reset
+            terminal.feed_child("clear\n".encode())
+
+    def next_tab(self, widget):
+        current = self.notebook.get_current_page()
+        if current < self.notebook.get_n_pages() - 1:
+            self.notebook.set_current_page(current + 1)
+        else:
+            self.notebook.set_current_page(0)
+
+    def previous_tab(self, widget):
+        current = self.notebook.get_current_page()
+        if current > 0:
+            self.notebook.set_current_page(current - 1)
+        else:
+            self.notebook.set_current_page(self.notebook.get_n_pages() - 1)
+
+    def split_horizontal(self, widget):
+        current_page = self.notebook.get_current_page()
+        if current_page != -1:
+            tab = self.notebook.get_nth_page(current_page)
+            tab.create_horizontal_split()
+
+    def split_vertical(self, widget):
+        current_page = self.notebook.get_current_page()
+        if current_page != -1:
+            tab = self.notebook.get_nth_page(current_page)
+            tab.create_vertical_split()
+
+    def update_goto_menu(self):
+        """Update the Go to submenu with current terminal tabs"""
+        goto_menu = None
+        actions_menu = None
+        
+        # Find the Actions menu and its Go to submenu
+        menubar = self.vbox.get_children()[0]
+        for menu_item in menubar.get_children():
+            if menu_item.get_label() == "Actions":
+                actions_menu = menu_item.get_submenu()
+                break
+        
+        if actions_menu:
+            for menu_item in actions_menu.get_children():
+                if menu_item.get_label() == "Go to":
+                    goto_menu = menu_item.get_submenu()
+                    break
+
+        if goto_menu:
+            # Clear existing items
+            goto_menu.foreach(lambda w: goto_menu.remove(w))
+            
+            # Add menu item for each tab
+            for i in range(self.notebook.get_n_pages()):
+                tab = self.notebook.get_nth_page(i)
+                label = self.notebook.get_tab_label(tab).label.get_text()
+                item = Gtk.MenuItem.new_with_label(f"{label}")
+                item.connect("activate", lambda w, num: self.notebook.set_current_page(num), i)
+                goto_menu.append(item)
+            goto_menu.show_all()
+
+    def show_find_dialog(self, widget):
+        dialog = Gtk.Dialog(
+            title="Find",
+            parent=self,
+            flags=0
+        )
+        dialog.add_buttons(
+            Gtk.STOCK_FIND, Gtk.ResponseType.OK,
+            Gtk.STOCK_CLOSE, Gtk.ResponseType.CANCEL
+        )
+        
+        box = dialog.get_content_area()
+        box.set_spacing(6)
+        box.set_margin_start(10)
+        box.set_margin_end(10)
+        box.set_margin_top(10)
+        box.set_margin_bottom(10)
+        
+        # Search entry
+        search_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        search_label = Gtk.Label(label="Search:")
+        search_entry = Gtk.Entry()
+        search_box.pack_start(search_label, False, False, 0)
+        search_box.pack_start(search_entry, True, True, 0)
+        box.add(search_box)
+        
+        # Case sensitive checkbox
+        case_check = Gtk.CheckButton(label="Case sensitive")
+        box.add(case_check)
+        
+        # Regex checkbox
+        regex_check = Gtk.CheckButton(label="Regular expression")
+        box.add(regex_check)
+
+        # Search direction
+        direction_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        direction_label = Gtk.Label(label="Search direction:")
+        backward_check = Gtk.CheckButton(label="Search backward")
+        direction_box.pack_start(direction_label, False, False, 0)
+        direction_box.pack_start(backward_check, False, False, 0)
+        box.add(direction_box)
+        
+        box.show_all()
+        
+        def do_search():
+            terminal = self.get_current_terminal()
+            if terminal and search_entry.get_text():
+                # Clear previous search
+                terminal.search_set_regex(None, 0)
+                
+                # Set up search flags
+                flags = 0
+                if regex_check.get_active():
+                    flags |= 1 << 0  # PCRE2_MULTILINE
+                if not case_check.get_active():
+                    flags |= 1 << 1  # PCRE2_CASELESS
+                
+                # Set up search pattern
+                terminal.search_set_regex(search_entry.get_text(), flags)
+                
+                # Perform search
+                found = terminal.search_find_next() if not backward_check.get_active() else terminal.search_find_previous()
+                
+                if not found:
+                    # If not found, show a message
+                    msg_dialog = Gtk.MessageDialog(
+                        parent=dialog,
+                        flags=0,
+                        message_type=Gtk.MessageType.INFO,
+                        buttons=Gtk.ButtonsType.OK,
+                        text="Text not found"
+                    )
+                    msg_dialog.run()
+                    msg_dialog.destroy()
+        
+        while True:
+            response = dialog.run()
+            if response == Gtk.ResponseType.OK:
+                do_search()
+            else:
+                # Clear search highlighting when closing dialog
+                terminal = self.get_current_terminal()
+                if terminal:
+                    terminal.search_set_regex(None, 0)
+                break
+        
+        dialog.destroy()
 
 if __name__ == "__main__":
     win = HyxTerminal()
