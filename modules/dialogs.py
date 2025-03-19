@@ -1,6 +1,7 @@
 import gi
+import os
 gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk, GLib
+from gi.repository import Gtk, GLib, GdkPixbuf, Pango
 
 class Dialogs:
     @staticmethod
@@ -53,7 +54,7 @@ class Dialogs:
         font_frame.add(font_box)
 
         font_button = Gtk.FontButton()
-        font_desc = Gtk.pango.FontDescription.from_string(
+        font_desc = Pango.FontDescription.from_string(
             f"{config.get('font_family', 'Monospace')} {config.get('font_size', 11)}"
         )
         font_button.set_font_desc(font_desc)
@@ -250,12 +251,36 @@ class Dialogs:
         about_dialog.set_authors(["HyxTerminal Team"])
         about_dialog.set_license_type(Gtk.License.GPL_3_0)
         
-        # Set logo if available
+        # Set logo from file
         try:
-            logo = Gtk.Image.new_from_icon_name("utilities-terminal", Gtk.IconSize.DIALOG)
-            about_dialog.set_logo(logo.get_pixbuf())
-        except:
-            pass
+            # Try to find the logo in different locations
+            logo_paths = [
+                os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "HyxTerminal.png"),
+                os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "HyxTerminal.png"),
+                "/usr/share/icons/hicolor/128x128/apps/hyxterminal.png",
+                "/usr/share/pixmaps/hyxterminal.png"
+            ]
+            
+            for logo_path in logo_paths:
+                if os.path.exists(logo_path):
+                    logo_pixbuf = GdkPixbuf.Pixbuf.new_from_file(logo_path)
+                    # Scale if needed (to 128x128 for example)
+                    if logo_pixbuf.get_width() > 128 or logo_pixbuf.get_height() > 128:
+                        logo_pixbuf = logo_pixbuf.scale_simple(128, 128, GdkPixbuf.InterpType.BILINEAR)
+                    about_dialog.set_logo(logo_pixbuf)
+                    break
+            else:
+                # If no custom logo found, use default terminal icon
+                logo = Gtk.Image.new_from_icon_name("utilities-terminal", Gtk.IconSize.DIALOG)
+                about_dialog.set_logo(logo.get_pixbuf())
+        except Exception as e:
+            print(f"Failed to set about dialog logo: {e}")
+            # Fallback to default icon
+            try:
+                logo = Gtk.Image.new_from_icon_name("utilities-terminal", Gtk.IconSize.DIALOG)
+                about_dialog.set_logo(logo.get_pixbuf())
+            except:
+                pass
             
         about_dialog.run()
         about_dialog.destroy()

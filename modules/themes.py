@@ -7,6 +7,7 @@ from modules import config
 class Themes:
     # Predefined themes (background_color, foreground_color, name)
     THEME_LIST = [
+        ("HyxTerminal", "#282A36", "#FFFFFF"),  # Default HyxTerminal brand theme
         ("Default Dark", "#000000", "#FFFFFF"),
         ("Solarized Dark", "#002b36", "#839496"),
         ("Solarized Light", "#fdf6e3", "#657b83"),

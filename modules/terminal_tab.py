@@ -23,6 +23,10 @@ class TerminalTab(Gtk.Box):
             self.create_horizontal_split()
         elif layout == "vertical":
             self.create_vertical_split()
+        elif layout == "quad":
+            self.create_quad_split()
+        elif layout == "custom":
+            self.show_custom_layout_dialog()
     def create_terminal(self):
         """Create a new terminal instance"""
         terminal = Vte.Terminal()

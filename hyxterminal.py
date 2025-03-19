@@ -2,6 +2,7 @@
 
 import gi
 import re
+import os
 gi.require_version('Gtk', '3.0')
 gi.require_version('Vte', '2.91')
 from gi.repository import Gtk, Gdk, Pango, Vte, GLib
@@ -16,6 +17,12 @@ import modules.config as config
 class HyxTerminal(Gtk.Window):
     def __init__(self):
         Gtk.Window.__init__(self, title="HyxTerminal")
+        
+        # Set application icon
+        self.set_application_icon()
+        
+        # Load CSS styles
+        self.load_css()
         
         # Enable transparency
         screen = self.get_screen()
@@ -593,6 +600,55 @@ class HyxTerminal(Gtk.Window):
         # Save preference
         self.config['show_menubar'] = menubar.get_visible()
         config.save_config(self.config)
+
+    def set_application_icon(self):
+        """Set the application icon from the logo file"""
+        try:
+            # Try to find the icon in different locations
+            icon_paths = [
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "HyxTerminal.png"),
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "HyxTerminal.png"),
+                "/usr/share/icons/hicolor/128x128/apps/hyxterminal.png",
+                "/usr/share/pixmaps/hyxterminal.png"
+            ]
+            
+            for icon_path in icon_paths:
+                if os.path.exists(icon_path):
+                    self.set_icon_from_file(icon_path)
+                    return
+                    
+            # If we couldn't find the icon, use a fallback icon
+            self.set_icon_name("utilities-terminal")
+        except Exception as e:
+            print(f"Failed to set application icon: {e}")
+            # Fall back to a standard icon
+            self.set_icon_name("utilities-terminal")
+
+    def load_css(self):
+        """Load CSS styling from the style.css file"""
+        try:
+            # Try to find the CSS in different locations
+            css_paths = [
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "style.css"),
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "style.css"),
+                "/usr/local/share/hyxterminal/assets/style.css"
+            ]
+            
+            for css_path in css_paths:
+                if os.path.exists(css_path):
+                    css_provider = Gtk.CssProvider()
+                    css_provider.load_from_path(css_path)
+                    Gtk.StyleContext.add_provider_for_screen(
+                        Gdk.Screen.get_default(),
+                        css_provider,
+                        Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+                    )
+                    print(f"Loaded CSS from: {css_path}")
+                    return
+                    
+            print("No CSS file found for styling")
+        except Exception as e:
+            print(f"Failed to load CSS: {e}")
 
 if __name__ == "__main__":
     win = HyxTerminal()

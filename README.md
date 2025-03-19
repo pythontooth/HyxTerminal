@@ -1,16 +1,43 @@
 # HyxTerminal
 
-A modern, customizable GTK-based terminal emulator written in Python.
+<p align="center">
+  <img src="HyxTerminal.png" alt="HyxTerminal Logo" width="150"/>
+</p>
+
+<p align="center">
+  <b>A modern, customizable GTK-based terminal emulator written in Python</b>
+</p>
+
+<p align="center">
+  <i>Power. Flexibility. Simplicity.</i>
+</p>
+
+## About HyxTerminal
+
+HyxTerminal is a feature-rich terminal emulator designed for modern workflows. It combines the power of a traditional terminal with innovative features that enhance productivity. With its sleek interface and customizable options, HyxTerminal delivers an exceptional terminal experience for developers, system administrators, and power users.
 
 ## Features
 
-- Multiple tabs with drag-and-drop reordering
-- Customizable appearance (colors, opacity, fonts)
-- Command auto-completion hints
-- Configurable cursor shapes
-- Adjustable scrollback buffer
-- Full Unicode support
-- Keyboard shortcuts
+- **Advanced Tab Management**
+  - Multiple tabs with drag-and-drop reordering
+  - Split terminals (horizontal and vertical)
+  - Custom layouts with quad-terminal support
+  
+- **Smart Features**
+  - Command auto-completion hints
+  - Command palette for quick access to functions
+  - Clipboard manager with history
+  
+- **Modern Interface**
+  - Customizable appearance (themes, colors, opacity)
+  - Configurable fonts and cursor styles
+  - Fullscreen mode and menubar toggle
+  
+- **Developer-Friendly**
+  - Plugin support for extended functionality
+  - Configurable scrollback buffer
+  - Full Unicode support
+  - Comprehensive keyboard shortcuts
 
 ## Requirements
 

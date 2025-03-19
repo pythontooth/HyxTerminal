@@ -11,13 +11,15 @@ def load_config():
         'window_height': 600,
         'scrollback_lines': 10000,
         'font_scale': 1.0,
-        'background_color': '#000000',
+        'background_color': '#282A36',  # HyxTerminal brand color
         'foreground_color': '#FFFFFF',
-        'background_opacity': 0.9,
+        'background_opacity': 0.95,
+        'accent_color': '#14A89A',      # Teal accent color
         'font_family': 'Monospace',
         'font_size': 11,
         'cursor_shape': 'block',
-        'cursor_blink_mode': 'system'
+        'cursor_blink_mode': 'system',
+        'theme_name': 'HyxTerminal'     # Default theme name
     }
     
     if config_path.exists():
