@@ -1,11 +1,172 @@
 import gi
+import os
+import json
+import importlib
+import inspect
+from typing import Dict, List, Optional, Any
 gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk
+from gi.repository import Gtk, GLib
+
+class Plugin:
+    """Base class for all plugins"""
+    def __init__(self):
+        self.name = "Base Plugin"
+        self.description = "Base plugin class"
+        self.version = "1.0"
+        self.author = "HyxTerminal Team"
+        self.enabled = False
+        self.settings = {}
+        self.dependencies = []
+        self.categories = []
+        self.tags = []
+        
+    def on_enable(self, parent_window):
+        """Called when the plugin is enabled"""
+        pass
+        
+    def on_disable(self, parent_window):
+        """Called when the plugin is disabled"""
+        pass
+        
+    def on_settings_changed(self, settings):
+        """Called when plugin settings are changed"""
+        self.settings.update(settings)
+        
+    def get_settings_widget(self):
+        """Return a widget for plugin settings"""
+        return None
+
+class PluginManager:
+    """Manages plugin loading, unloading, and state"""
+    def __init__(self, parent_window):
+        self.parent_window = parent_window
+        self.plugins: Dict[str, Plugin] = {}
+        self.loaded_plugins: Dict[str, Plugin] = {}
+        self.plugin_dir = os.path.join(os.path.dirname(__file__), "plugins")
+        self.settings_file = os.path.join(os.path.dirname(__file__), "plugin_settings.json")
+        self.load_settings()
+        
+    def load_settings(self):
+        """Load plugin settings from file"""
+        if os.path.exists(self.settings_file):
+            with open(self.settings_file, 'r') as f:
+                self.settings = json.load(f)
+        else:
+            self.settings = {}
+            
+    def save_settings(self):
+        """Save plugin settings to file"""
+        settings_data = {}
+        for name, plugin in self.plugins.items():
+            settings_data[name] = {
+                'enabled': plugin.enabled,
+                'settings': plugin.settings
+            }
+        with open(self.settings_file, 'w') as f:
+            json.dump(settings_data, f, indent=4)
+            
+    def load_plugins(self):
+        """Load all available plugins"""
+        if not os.path.exists(self.plugin_dir):
+            os.makedirs(self.plugin_dir)
+            
+        for filename in os.listdir(self.plugin_dir):
+            if filename.endswith('.py') and not filename.startswith('__'):
+                try:
+                    module_name = f"modules.plugins.{filename[:-3]}"
+                    spec = importlib.util.spec_from_file_location(
+                        module_name,
+                        os.path.join(self.plugin_dir, filename)
+                    )
+                    module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(module)
+                    
+                    # Find plugin classes in the module
+                    for name, obj in inspect.getmembers(module):
+                        if (inspect.isclass(obj) and 
+                            issubclass(obj, Plugin) and 
+                            obj != Plugin):
+                            plugin = obj()
+                            self.plugins[plugin.name] = plugin
+                            
+                            # Restore plugin state from settings
+                            if plugin.name in self.settings:
+                                plugin.enabled = self.settings[plugin.name].get('enabled', False)
+                                plugin.settings = self.settings[plugin.name].get('settings', {})
+                                
+                            if plugin.enabled:
+                                self.enable_plugin(plugin.name)
+                except Exception as e:
+                    print(f"Error loading plugin {filename}: {e}")
+                    
+    def enable_plugin(self, plugin_name: str) -> bool:
+        """Enable a plugin and its dependencies"""
+        if plugin_name not in self.plugins:
+            return False
+            
+        plugin = self.plugins[plugin_name]
+        
+        # Check dependencies
+        for dep in plugin.dependencies:
+            if dep not in self.loaded_plugins:
+                if not self.enable_plugin(dep):
+                    return False
+                    
+        plugin.enabled = True
+        plugin.on_enable(self.parent_window)
+        self.loaded_plugins[plugin_name] = plugin
+        self.save_settings()
+        return True
+        
+    def disable_plugin(self, plugin_name: str) -> bool:
+        """Disable a plugin"""
+        if plugin_name not in self.loaded_plugins:
+            return False
+            
+        plugin = self.loaded_plugins[plugin_name]
+        plugin.enabled = False
+        plugin.on_disable(self.parent_window)
+        del self.loaded_plugins[plugin_name]
+        self.save_settings()
+        return True
+        
+    def get_plugin(self, plugin_name: str) -> Optional[Plugin]:
+        """Get a plugin by name"""
+        return self.plugins.get(plugin_name)
+        
+    def get_enabled_plugins(self) -> List[Plugin]:
+        """Get list of enabled plugins"""
+        return list(self.loaded_plugins.values())
+        
+    def get_available_plugins(self) -> List[Plugin]:
+        """Get list of all available plugins"""
+        return list(self.plugins.values())
+        
+    def update_plugin_settings(self, plugin_name: str, settings: Dict[str, Any]):
+        """Update settings for a plugin"""
+        if plugin_name in self.plugins:
+            plugin = self.plugins[plugin_name]
+            plugin.on_settings_changed(settings)
+            self.save_settings()
+            return True
+        return False
 
 class Plugins:
-    @staticmethod
-    def show_plugin_browser(parent_window):
+    """Static class for plugin-related UI operations"""
+    _manager = None
+    
+    @classmethod
+    def initialize(cls, parent_window):
+        """Initialize the plugin manager"""
+        cls._manager = PluginManager(parent_window)
+        cls._manager.load_plugins()
+        
+    @classmethod
+    def show_plugin_browser(cls, parent_window):
         """Show plugin browser dialog with available plugins"""
+        if not cls._manager:
+            cls.initialize(parent_window)
+            
         dialog = Gtk.Dialog(
             title="Plugin Browser",
             parent=parent_window,
@@ -14,102 +175,223 @@ class Plugins:
         dialog.add_buttons(
             Gtk.STOCK_CLOSE, Gtk.ResponseType.CLOSE
         )
-        dialog.set_default_size(500, 400)
+        dialog.set_default_size(800, 600)
         
-        box = dialog.get_content_area()
-        box.set_spacing(6)
-        box.set_margin_start(10)
-        box.set_margin_end(10)
-        box.set_margin_top(10)
-        box.set_margin_bottom(10)
+        # Create main container
+        main_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        main_box.set_margin_start(12)
+        main_box.set_margin_end(12)
+        main_box.set_margin_top(12)
+        main_box.set_margin_bottom(12)
+        dialog.get_content_area().pack_start(main_box, True, True, 0)
         
-        # Create list store for plugins
-        # Columns: Name, Description, Enabled, Version, Author
-        store = Gtk.ListStore(str, str, bool, str, str)
+        # Left panel - Plugin list
+        left_panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        left_panel.set_size_request(520, -1)  # Fixed width for left panel
         
-        # Sample plugins
-        plugins = [
-            ("Smart Completion", "Provides intelligent command completion", True, "1.0", "HyxTerminal Team"),
-            ("Clipboard Manager", "Enhanced clipboard with history", False, "0.9", "HyxTerminal Team"),
-            ("Theme Switcher", "Automatic theme switching based on time", False, "1.2", "HyxTerminal Team"),
-            ("Advanced Search", "Regex-based terminal search", False, "0.8", "HyxTerminal Team"),
-            ("Git Integration", "Git branch and status in terminal", False, "1.1", "HyxTerminal Team")
-        ]
+        # Search box with icon
+        search_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        search_icon = Gtk.Image.new_from_icon_name("system-search", Gtk.IconSize.SMALL_TOOLBAR)
+        search_entry = Gtk.SearchEntry()
+        search_entry.set_placeholder_text("Search plugins...")
+        search_box.pack_start(search_icon, False, False, 0)
+        search_box.pack_start(search_entry, True, True, 0)
+        left_panel.pack_start(search_box, False, False, 0)
         
-        for name, desc, enabled, version, author in plugins:
-            store.append([name, desc, enabled, version, author])
+        # Category filter
+        filter_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        filter_label = Gtk.Label(label="Filter by:")
+        filter_combo = Gtk.ComboBoxText()
+        filter_combo.append_text("All Categories")
+        categories = set()
+        for plugin in cls._manager.get_available_plugins():
+            categories.update(plugin.categories)
+        for category in sorted(categories):
+            filter_combo.append_text(category)
+        filter_combo.set_active(0)
+        filter_box.pack_start(filter_label, False, False, 0)
+        filter_box.pack_start(filter_combo, True, True, 0)
+        left_panel.pack_start(filter_box, False, False, 0)
         
-        # Create tree view
-        treeview = Gtk.TreeView(model=store)
-        
-        # Add columns
-        renderer_toggle = Gtk.CellRendererToggle()
-        renderer_toggle.connect("toggled", lambda cell, path: Plugins.on_plugin_toggled(cell, path, store, parent_window))
-        column_toggle = Gtk.TreeViewColumn("Enabled", renderer_toggle, active=2)
-        treeview.append_column(column_toggle)
-        
-        renderer_text = Gtk.CellRendererText()
-        column_name = Gtk.TreeViewColumn("Plugin", renderer_text, text=0)
-        treeview.append_column(column_name)
-        
-        renderer_text = Gtk.CellRendererText()
-        column_desc = Gtk.TreeViewColumn("Description", renderer_text, text=1)
-        treeview.append_column(column_desc)
-        
-        renderer_text = Gtk.CellRendererText()
-        column_version = Gtk.TreeViewColumn("Version", renderer_text, text=3)
-        treeview.append_column(column_version)
-        
-        # Add tree view to a scrolled window
+        # Plugin list
         scrolled = Gtk.ScrolledWindow()
         scrolled.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        
+        # Create list store
+        store = Gtk.ListStore(str, str, bool, str, str, str, str, str)  # Added status column
+        treeview = Gtk.TreeView(model=store)
+        treeview.set_headers_visible(True)
+        
+        # Add columns
+        # Status column (enabled/disabled)
+        renderer_toggle = Gtk.CellRendererToggle()
+        renderer_toggle.connect("toggled", lambda cell, path: cls.on_plugin_toggled(cell, path, store))
+        column_status = Gtk.TreeViewColumn("Status", renderer_toggle, active=2)
+        column_status.set_min_width(60)
+        column_status.set_fixed_width(60)
+        column_status.set_resizable(True)
+        treeview.append_column(column_status)
+        
+        # Name column
+        renderer_text = Gtk.CellRendererText()
+        column_name = Gtk.TreeViewColumn("Plugin", renderer_text, text=0)
+        column_name.set_min_width(150)
+        column_name.set_fixed_width(150)
+        column_name.set_resizable(True)
+        treeview.append_column(column_name)
+        
+        # Version column
+        renderer_text = Gtk.CellRendererText()
+        column_version = Gtk.TreeViewColumn("Version", renderer_text, text=3)
+        column_version.set_min_width(80)
+        column_version.set_fixed_width(80)
+        column_version.set_resizable(True)
+        treeview.append_column(column_version)
+        
+        # Categories column
+        renderer_text = Gtk.CellRendererText()
+        column_categories = Gtk.TreeViewColumn("Categories", renderer_text, text=5)
+        column_categories.set_min_width(150)
+        column_categories.set_fixed_width(150)
+        column_categories.set_resizable(True)
+        treeview.append_column(column_categories)
+        
+        # Status text column
+        renderer_text = Gtk.CellRendererText()
+        column_status_text = Gtk.TreeViewColumn("", renderer_text, text=7)
+        column_status_text.set_min_width(80)
+        column_status_text.set_fixed_width(80)
+        column_status_text.set_resizable(True)
+        treeview.append_column(column_status_text)
+        
         scrolled.add(treeview)
-        box.pack_start(scrolled, True, True, 0)
+        left_panel.pack_start(scrolled, True, True, 0)
         
-        # Add plugin details section
-        frame = Gtk.Frame(label="Plugin Details")
-        details_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        details_box.set_margin_start(10)
-        details_box.set_margin_end(10)
-        details_box.set_margin_top(10)
-        details_box.set_margin_bottom(10)
+        # Right panel - Details
+        right_panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        right_panel.set_size_request(240, -1)  # Fixed width for right panel
         
-        details_label = Gtk.Label()
-        details_label.set_markup("<i>Select a plugin to view details</i>")
-        details_label.set_line_wrap(True)
-        details_label.set_xalign(0)
-        details_box.pack_start(details_label, False, False, 0)
+        # Plugin details frame
+        details_frame = Gtk.Frame(label="Plugin Details")
+        details_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        details_box.set_margin_start(12)
+        details_box.set_margin_end(12)
+        details_box.set_margin_top(12)
+        details_box.set_margin_bottom(12)
         
-        frame.add(details_box)
-        box.pack_start(frame, False, False, 0)
+        # Plugin icon and name
+        header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        plugin_icon = Gtk.Image.new_from_icon_name("application-x-addon", Gtk.IconSize.DIALOG)
+        header_box.pack_start(plugin_icon, False, False, 0)
         
-        # Update details when selection changes
+        name_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        name_label = Gtk.Label()
+        name_label.set_markup("<span size='x-large'><b>Select a plugin</b></span>")
+        version_label = Gtk.Label()
+        version_label.set_markup("<span size='small' color='gray'>Version: -</span>")
+        name_box.pack_start(name_label, False, False, 0)
+        name_box.pack_start(version_label, False, False, 0)
+        header_box.pack_start(name_box, True, True, 0)
+        details_box.pack_start(header_box, False, False, 0)
+        
+        # Description
+        desc_label = Gtk.Label()
+        desc_label.set_line_wrap(True)
+        desc_label.set_xalign(0)
+        desc_label.set_markup("<i>Select a plugin to view its description</i>")
+        details_box.pack_start(desc_label, False, False, 0)
+        
+        # Author
+        author_label = Gtk.Label()
+        author_label.set_markup("<span size='small'><b>Author:</b> -</span>")
+        details_box.pack_start(author_label, False, False, 0)
+        
+        # Tags
+        tags_label = Gtk.Label()
+        tags_label.set_markup("<span size='small'><b>Tags:</b> -</span>")
+        details_box.pack_start(tags_label, False, False, 0)
+        
+        # Settings button
+        settings_button = Gtk.Button(label="Configure Plugin")
+        settings_button.set_sensitive(False)
+        settings_button.connect("clicked", lambda w: cls.show_plugin_settings(parent_window, treeview))
+        details_box.pack_start(settings_button, False, False, 0)
+        
+        details_frame.add(details_box)
+        right_panel.pack_start(details_frame, True, True, 0)
+        
+        # Add panels to main container
+        main_box.pack_start(left_panel, True, True, 0)
+        main_box.pack_start(right_panel, True, True, 0)
+        
+        # Add plugins to store
+        for plugin in cls._manager.get_available_plugins():
+            status_text = "Enabled" if plugin.enabled else "Disabled"
+            store.append([
+                plugin.name,
+                plugin.description,
+                plugin.enabled,
+                plugin.version,
+                plugin.author,
+                ", ".join(plugin.categories),
+                ", ".join(plugin.tags),
+                status_text
+            ])
+        
+        # Handle selection changes
         selection = treeview.get_selection()
-        selection.connect("changed", lambda sel: Plugins.on_plugin_selection_changed(sel, store, details_label))
+        selection.connect("changed", lambda sel: cls.on_plugin_selection_changed(
+            sel, store, name_label, version_label, desc_label, author_label, tags_label, settings_button
+        ))
+        
+        # Handle search and filtering
+        def filter_plugins(entry):
+            search_text = entry.get_text().lower()
+            category = filter_combo.get_active_text()
+            store.clear()
+            
+            for plugin in cls._manager.get_available_plugins():
+                if category != "All Categories" and category not in plugin.categories:
+                    continue
+                    
+                if (search_text in plugin.name.lower() or
+                    search_text in plugin.description.lower() or
+                    search_text in " ".join(plugin.categories).lower() or
+                    search_text in " ".join(plugin.tags).lower()):
+                    status_text = "Enabled" if plugin.enabled else "Disabled"
+                    store.append([
+                        plugin.name,
+                        plugin.description,
+                        plugin.enabled,
+                        plugin.version,
+                        plugin.author,
+                        ", ".join(plugin.categories),
+                        ", ".join(plugin.tags),
+                        status_text
+                    ])
+        
+        search_entry.connect("search-changed", filter_plugins)
+        filter_combo.connect("changed", lambda w: filter_plugins(search_entry))
         
         dialog.show_all()
         dialog.run()
         dialog.destroy()
     
-    @staticmethod
-    def on_plugin_toggled(cell, path, store, parent_window):
+    @classmethod
+    def on_plugin_toggled(cls, cell, path, store):
         """Toggle plugin enabled state"""
         store[path][2] = not store[path][2]
         plugin_name = store[path][0]
         enabled = store[path][2]
         
-        # If this is the smart completion plugin, update the terminal tabs
-        if hasattr(parent_window, 'notebook') and plugin_name == "Smart Completion":
-            for i in range(parent_window.notebook.get_n_pages()):
-                tab = parent_window.notebook.get_nth_page(i)
-                for terminal in tab.terminals:
-                    # Enable or disable command completion
-                    if hasattr(tab, 'hint_timeouts'):
-                        if not enabled and tab.hint_timeouts.get(terminal):
-                            tab.clear_hint(terminal)
+        if enabled:
+            cls._manager.enable_plugin(plugin_name)
+        else:
+            cls._manager.disable_plugin(plugin_name)
     
-    @staticmethod
-    def on_plugin_selection_changed(selection, store, details_label):
+    @classmethod
+    def on_plugin_selection_changed(cls, selection, store, name_label, version_label, 
+                                  desc_label, author_label, tags_label, settings_button):
         """Update plugin details when selection changes"""
         model, treeiter = selection.get_selected()
         if treeiter is not None:
@@ -117,233 +399,69 @@ class Plugins:
             desc = model[treeiter][1]
             version = model[treeiter][3]
             author = model[treeiter][4]
+            categories = model[treeiter][5]
+            tags = model[treeiter][6]
             
-            details = f"<b>{name}</b> (v{version})\n\n{desc}\n\nAuthor: {author}"
-            details_label.set_markup(details)
+            name_label.set_markup(f"<span size='x-large'><b>{name}</b></span>")
+            version_label.set_markup(f"<span size='small' color='gray'>Version: {version}</span>")
+            desc_label.set_text(desc)
+            author_label.set_markup(f"<span size='small'><b>Author:</b> {author}</span>")
+            tags_label.set_markup(f"<span size='small'><b>Tags:</b> {tags}</span>")
+            settings_button.set_sensitive(True)
+        else:
+            name_label.set_markup("<span size='x-large'><b>Select a plugin</b></span>")
+            version_label.set_markup("<span size='small' color='gray'>Version: -</span>")
+            desc_label.set_text("Select a plugin to view its description")
+            author_label.set_markup("<span size='small'><b>Author:</b> -</span>")
+            tags_label.set_markup("<span size='small'><b>Tags:</b> -</span>")
+            settings_button.set_sensitive(False)
     
-    @staticmethod
-    def toggle_smart_completion(widget, parent_window):
-        """Toggle smart command completion in all terminals"""
-        enabled = widget.get_active()
-        
-        # Update all terminal tabs
-        if hasattr(parent_window, 'notebook'):
-            for i in range(parent_window.notebook.get_n_pages()):
-                tab = parent_window.notebook.get_nth_page(i)
-                for terminal in tab.terminals:
-                    # Clear current hints if disabling
-                    if not enabled and hasattr(tab, 'hint_timeouts'):
-                        if tab.hint_timeouts.get(terminal):
-                            tab.clear_hint(terminal)
-    
-    @staticmethod
-    def show_clipboard_manager(parent_window):
-        """Show clipboard manager with history"""
+    @classmethod
+    def show_plugin_settings(cls, parent_window, treeview):
+        """Show settings dialog for the selected plugin"""
+        model, treeiter = treeview.get_selection().get_selected()
+        if treeiter is None:
+            return
+            
+        plugin_name = model[treeiter][0]
+        plugin = cls._manager.get_plugin(plugin_name)
+        if not plugin:
+            return
+            
         dialog = Gtk.Dialog(
-            title="Clipboard Manager",
-            parent=parent_window,
-            flags=0
-        )
-        dialog.add_buttons(
-            Gtk.STOCK_CLOSE, Gtk.ResponseType.CLOSE,
-            "Clear History", Gtk.ResponseType.REJECT
-        )
-        dialog.set_default_size(400, 300)
-        
-        box = dialog.get_content_area()
-        box.set_spacing(6)
-        box.set_margin_start(10)
-        box.set_margin_end(10)
-        box.set_margin_top(10)
-        box.set_margin_bottom(10)
-        
-        # Sample clipboard history
-        clipboard_items = [
-            "ls -la",
-            "cd /home/user/projects",
-            "git status",
-            "docker ps",
-            "python3 script.py --verbose",
-            "grep -r 'pattern' .",
-            "echo $PATH"
-        ]
-        
-        # Create list store
-        store = Gtk.ListStore(str)
-        for item in clipboard_items:
-            store.append([item])
-        
-        # Create tree view
-        treeview = Gtk.TreeView(model=store)
-        treeview.set_headers_visible(False)
-        
-        renderer = Gtk.CellRendererText()
-        column = Gtk.TreeViewColumn("Content", renderer, text=0)
-        treeview.append_column(column)
-        
-        # Add tree view to scrolled window
-        scrolled = Gtk.ScrolledWindow()
-        scrolled.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
-        scrolled.add(treeview)
-        box.pack_start(scrolled, True, True, 0)
-        
-        # Add "Paste" button
-        paste_button = Gtk.Button(label="Paste Selected")
-        paste_button.set_sensitive(False)
-        box.pack_start(paste_button, False, False, 0)
-        
-        # Handle selection changes
-        selection = treeview.get_selection()
-        selection.connect("changed", lambda s: paste_button.set_sensitive(True))
-        
-        # Handle paste button click
-        def on_paste_clicked(button):
-            model, treeiter = selection.get_selected()
-            if treeiter:
-                text = model[treeiter][0]
-                terminal = parent_window.get_current_terminal()
-                if terminal:
-                    terminal.feed_child((text + "\n").encode())
-                dialog.destroy()
-        
-        paste_button.connect("clicked", on_paste_clicked)
-        
-        # Handle double-click on item
-        def on_row_activated(view, path, column):
-            treeiter = store.get_iter(path)
-            text = store[treeiter][0]
-            terminal = parent_window.get_current_terminal()
-            if terminal:
-                terminal.feed_child((text + "\n").encode())
-            dialog.destroy()
-        
-        treeview.connect("row-activated", on_row_activated)
-        
-        dialog.show_all()
-        response = dialog.run()
-        
-        if response == Gtk.ResponseType.REJECT:
-            # Clear history
-            store.clear()
-        
-        dialog.destroy()
-    
-    @staticmethod
-    def show_plugin_settings(parent_window):
-        """Show settings for installed plugins"""
-        dialog = Gtk.Dialog(
-            title="Plugin Settings",
+            title=f"Settings - {plugin_name}",
             parent=parent_window,
             flags=0
         )
         dialog.add_buttons(
             Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
-            Gtk.STOCK_APPLY, Gtk.ResponseType.APPLY,
-            Gtk.STOCK_OK, Gtk.ResponseType.OK
+            Gtk.STOCK_SAVE, Gtk.ResponseType.ACCEPT
         )
-        dialog.set_default_size(500, 400)
+        dialog.set_default_size(400, 300)
         
-        box = dialog.get_content_area()
-        box.set_spacing(6)
-        box.set_margin_start(10)
-        box.set_margin_end(10)
-        box.set_margin_top(10)
-        box.set_margin_bottom(10)
-        
-        # Create notebook for plugin settings
-        notebook = Gtk.Notebook()
-        box.pack_start(notebook, True, True, 0)
-        
-        # Smart Completion settings page
-        sc_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        sc_page.set_margin_start(10)
-        sc_page.set_margin_end(10)
-        sc_page.set_margin_top(10)
-        sc_page.set_margin_bottom(10)
-        
-        delay_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        delay_label = Gtk.Label(label="Completion delay (ms):")
-        delay_spinner = Gtk.SpinButton.new_with_range(100, 5000, 100)
-        delay_spinner.set_value(1000)  # Default delay is 1000ms
-        delay_box.pack_start(delay_label, False, False, 0)
-        delay_box.pack_start(delay_spinner, True, True, 0)
-        sc_page.pack_start(delay_box, False, False, 0)
-        
-        case_check = Gtk.CheckButton(label="Case sensitive completion")
-        sc_page.pack_start(case_check, False, False, 0)
-        
-        style_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        style_label = Gtk.Label(label="Hint style:")
-        style_combo = Gtk.ComboBoxText()
-        for style in ["Subtle", "Bold", "Italic", "Colored"]:
-            style_combo.append_text(style)
-        style_combo.set_active(0)
-        style_box.pack_start(style_label, False, False, 0)
-        style_box.pack_start(style_combo, True, True, 0)
-        sc_page.pack_start(style_box, False, False, 0)
-        
-        notebook.append_page(sc_page, Gtk.Label(label="Smart Completion"))
-        
-        # Theme Switcher settings page
-        ts_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        ts_page.set_margin_start(10)
-        ts_page.set_margin_end(10)
-        ts_page.set_margin_top(10)
-        ts_page.set_margin_bottom(10)
-        
-        auto_switch = Gtk.CheckButton(label="Automatically switch themes")
-        ts_page.pack_start(auto_switch, False, False, 0)
-        
-        day_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        day_label = Gtk.Label(label="Day theme:")
-        day_combo = Gtk.ComboBoxText()
-        for theme in ["Default Light", "Solarized Light", "GitHub Light"]:
-            day_combo.append_text(theme)
-        day_combo.set_active(1)
-        day_box.pack_start(day_label, False, False, 0)
-        day_box.pack_start(day_combo, True, True, 0)
-        ts_page.pack_start(day_box, False, False, 0)
-        
-        night_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        night_label = Gtk.Label(label="Night theme:")
-        night_combo = Gtk.ComboBoxText()
-        for theme in ["Default Dark", "Solarized Dark", "Dracula", "Nord"]:
-            night_combo.append_text(theme)
-        night_combo.set_active(0)
-        night_box.pack_start(night_label, False, False, 0)
-        night_box.pack_start(night_combo, True, True, 0)
-        ts_page.pack_start(night_box, False, False, 0)
-        
-        time_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        time_label = Gtk.Label(label="Switch at:")
-        
-        day_time = Gtk.SpinButton.new_with_range(0, 23, 1)
-        day_time.set_value(7)  # 7:00 AM
-        day_label2 = Gtk.Label(label="Day starts at:")
-        
-        night_time = Gtk.SpinButton.new_with_range(0, 23, 1)
-        night_time.set_value(19)  # 7:00 PM
-        night_label2 = Gtk.Label(label="Night starts at:")
-        
-        time_box.pack_start(day_label2, False, False, 0)
-        time_box.pack_start(day_time, False, False, 0)
-        time_box.pack_start(night_label2, False, False, 0)
-        time_box.pack_start(night_time, False, False, 0)
-        ts_page.pack_start(time_box, False, False, 0)
-        
-        notebook.append_page(ts_page, Gtk.Label(label="Theme Switcher"))
-        
+        # Get settings widget from plugin
+        settings_widget = plugin.get_settings_widget()
+        if settings_widget:
+            dialog.get_content_area().pack_start(settings_widget, True, True, 0)
+        else:
+            label = Gtk.Label(label="This plugin has no settings.")
+            label.set_margin_start(10)
+            label.set_margin_end(10)
+            label.set_margin_top(10)
+            label.set_margin_bottom(10)
+            dialog.get_content_area().pack_start(label, True, True, 0)
+            
         dialog.show_all()
         response = dialog.run()
         
-        if response in [Gtk.ResponseType.OK, Gtk.ResponseType.APPLY]:
-            # Save settings (simulated)
-            pass
+        if response == Gtk.ResponseType.ACCEPT:
+            # Save settings
+            cls._manager.update_plugin_settings(plugin_name, plugin.settings)
             
         dialog.destroy()
-        
-    @staticmethod
-    def show_command_palette(parent_window):
+    
+    @classmethod
+    def show_command_palette(cls, parent_window):
         """Show command palette with searchable commands"""
         dialog = Gtk.Dialog(
             title="Command Palette",
@@ -461,9 +579,9 @@ class Plugins:
         search_entry.grab_focus()
         dialog.run()
         dialog.destroy()
-        
-    @staticmethod
-    def show_documentation(parent_window):
+    
+    @classmethod
+    def show_documentation(cls, parent_window):
         """Show HyxTerminal documentation"""
         dialog = Gtk.Dialog(
             title="HyxTerminal Documentation",
@@ -537,7 +655,8 @@ class Plugins:
             "opacity, and other visual elements through the Preferences dialog.\n\n"
             
             "Plugins\n\n"
-            "Extend functionality with plugins accessible from the Plugins menu."
+            "Extend functionality with plugins accessible from the Plugins menu. Plugins can add "
+            "new features, customize behavior, and enhance productivity."
         )
         
         features_scroll.add(features_view)

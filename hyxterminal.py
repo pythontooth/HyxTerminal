@@ -13,6 +13,7 @@ from modules.dialogs import Dialogs
 from modules.plugins import Plugins
 from modules.themes import Themes
 import modules.config as config
+from modules.plugin_manager import PluginManager
 
 class HyxTerminal(Gtk.Window):
     def __init__(self):
@@ -40,6 +41,9 @@ class HyxTerminal(Gtk.Window):
             self.config.get('window_height', 600)
         )
 
+        # Initialize plugin manager
+        self.plugin_manager = PluginManager()
+        
         # Create main vertical box
         self.vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.add(self.vbox)

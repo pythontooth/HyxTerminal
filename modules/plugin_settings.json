@@ -1,0 +1,51 @@
+{
+    "Theme Switcher": {
+        "enabled": false,
+        "settings": {
+            "auto_switch": true,
+            "day_theme": "Solarized Light",
+            "night_theme": "Solarized Dark",
+            "day_start_hour": 7,
+            "night_start_hour": 19
+        }
+    },
+    "Terminal Wallpaper": {
+        "enabled": true,
+        "settings": {
+            "enabled": true,
+            "type": "image",
+            "path": "/home/patryk/Downloads/Lamborghini-Revuelto-639371-2459876133.jpg",
+            "brightness": 0.3,
+            "blur": 0.0,
+            "animation_speed": 1.0,
+            "fit_mode": "cover",
+            "auto_adjust": true,
+            "opacity": 0.2
+        }
+    },
+    "Clipboard Manager": {
+        "enabled": false,
+        "settings": {
+            "max_history": 100,
+            "auto_paste": false,
+            "show_timestamps": true
+        }
+    },
+    "Smart Completion": {
+        "enabled": false,
+        "settings": {
+            "delay_ms": 1000,
+            "case_sensitive": false,
+            "hint_style": "subtle"
+        }
+    },
+    "Advanced Search": {
+        "enabled": false,
+        "settings": {
+            "case_sensitive": false,
+            "whole_word": false,
+            "highlight_color": "#FFD700",
+            "max_results": 100
+        }
+    }
+}
