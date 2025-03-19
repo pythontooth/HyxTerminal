@@ -21,9 +21,6 @@ class HyxTerminal(Gtk.Window):
         # Set application icon
         self.set_application_icon()
         
-        # Load CSS styles
-        self.load_css()
-        
         # Enable transparency
         screen = self.get_screen()
         visual = screen.get_rgba_visual()
@@ -353,7 +350,7 @@ class HyxTerminal(Gtk.Window):
             """
             menubar_css.load_from_data(css.encode())
             menubar_style.add_provider(menubar_css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
-            
+
         Dialogs.show_preferences(self, self.config, update_terminals)
 
     def new_window(self, widget):
@@ -565,20 +562,20 @@ class HyxTerminal(Gtk.Window):
             if not text:
                 return False
                 
-            # Clear previous search
-            terminal.search_set_regex(None, 0)
-            
-            # Set up search flags
-            flags = 0
+                # Clear previous search
+                terminal.search_set_regex(None, 0)
+                
+                # Set up search flags
+                flags = 0
             if use_regex:
-                flags |= 1 << 0  # PCRE2_MULTILINE
+                    flags |= 1 << 0  # PCRE2_MULTILINE
             if not case_sensitive:
-                flags |= 1 << 1  # PCRE2_CASELESS
-            
-            # Set up search pattern
+                    flags |= 1 << 1  # PCRE2_CASELESS
+                
+                # Set up search pattern
             terminal.search_set_regex(text, flags)
-            
-            # Perform search
+                
+                # Perform search
             found = terminal.search_find_next() if not backward else terminal.search_find_previous()
             return found
             
@@ -623,32 +620,6 @@ class HyxTerminal(Gtk.Window):
             print(f"Failed to set application icon: {e}")
             # Fall back to a standard icon
             self.set_icon_name("utilities-terminal")
-
-    def load_css(self):
-        """Load CSS styling from the style.css file"""
-        try:
-            # Try to find the CSS in different locations
-            css_paths = [
-                os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "style.css"),
-                os.path.join(os.path.dirname(os.path.abspath(__file__)), "style.css"),
-                "/usr/local/share/hyxterminal/assets/style.css"
-            ]
-            
-            for css_path in css_paths:
-                if os.path.exists(css_path):
-                    css_provider = Gtk.CssProvider()
-                    css_provider.load_from_path(css_path)
-                    Gtk.StyleContext.add_provider_for_screen(
-                        Gdk.Screen.get_default(),
-                        css_provider,
-                        Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-                    )
-                    print(f"Loaded CSS from: {css_path}")
-                    return
-                    
-            print("No CSS file found for styling")
-        except Exception as e:
-            print(f"Failed to load CSS: {e}")
 
 if __name__ == "__main__":
     win = HyxTerminal()
