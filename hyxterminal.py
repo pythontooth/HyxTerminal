@@ -5,7 +5,7 @@ import re
 import os
 gi.require_version('Gtk', '3.0')
 gi.require_version('Vte', '2.91')
-from gi.repository import Gtk, Gdk, Pango, Vte, GLib
+from gi.repository import Gtk, Gdk, Pango, Vte, GLib, GObject
 
 from modules.terminal_tab import TerminalTab
 from modules.tab_label import TabLabel
@@ -251,7 +251,7 @@ class HyxTerminal(Gtk.Window):
 
         # Plugin settings
         plugin_settings = Gtk.MenuItem.new_with_label("Plugin Settings...")
-        plugin_settings.connect("activate", lambda w: Plugins.show_plugin_settings(self))
+        plugin_settings.connect("activate", lambda w: Plugins.show_plugin_browser(self))
         plugins_submenu.append(plugin_settings)
 
         menubar.append(plugins_menu)
@@ -557,32 +557,56 @@ class HyxTerminal(Gtk.Window):
             terminal = self.get_current_terminal()
             if not terminal:
                 return False
-                
+            
             if clear:
                 # Clear search highlighting
                 terminal.search_set_regex(None, 0)
                 return True
-                
+            
             if not text:
                 return False
-                
+            
+            try:
                 # Clear previous search
                 terminal.search_set_regex(None, 0)
                 
-                # Set up search flags
-                flags = 0
-            if use_regex:
-                    flags |= 1 << 0  # PCRE2_MULTILINE
-            if not case_sensitive:
-                    flags |= 1 << 1  # PCRE2_CASELESS
+                # Prepare pattern
+                pattern = text if use_regex else re.escape(text)
                 
-                # Set up search pattern
-            terminal.search_set_regex(text, flags)
+                try:
+                    # Set up regex flags for VTE
+                    # MULTILINE (8) is required by VTE for proper terminal search
+                    # PCRE2_MULTILINE (1) is for regex multiline mode
+                    flags = 8 | 1  # VTE multiline flag | PCRE2_MULTILINE
+                    
+                    if not case_sensitive:
+                        flags |= 2  # PCRE2_CASELESS
+                    
+                    # Create regex for searching
+                    regex = Vte.Regex.new_for_search(pattern, -1, flags)
+                    
+                    # Enable wrap-around search by default
+                    terminal.search_set_wrap_around(True)
+                    
+                    # Set up search pattern with proper flags
+                    terminal.search_set_regex(regex, flags)
+                    
+                    # Perform search
+                    if backward:
+                        found = terminal.search_find_previous()
+                    else:
+                        found = terminal.search_find_next()
+                    
+                    return found
+                    
+                except GLib.Error as e:
+                    print(f"Invalid regex pattern: {e}")
+                    return False
                 
-                # Perform search
-            found = terminal.search_find_next() if not backward else terminal.search_find_previous()
-            return found
-            
+            except Exception as e:
+                print(f"Search error: {e}")
+                return False
+        
         Dialogs.show_find_dialog(self, do_find)
 
     def toggle_fullscreen(self, widget):

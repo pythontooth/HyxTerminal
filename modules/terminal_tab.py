@@ -57,27 +57,39 @@ class TerminalTab(Gtk.Box):
 
     def create_horizontal_split(self):
         """Create two terminals side by side"""
+        # Remove existing terminal
+        if len(self.get_children()) > 0:
+            old_terminal = self.get_children()[0]
+            self.remove(old_terminal)
+            
         paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
         self.style_paned(paned)
-        term1 = self.create_terminal()
+        term1 = old_terminal if old_terminal else self.create_terminal()
         term2 = self.create_terminal()
         paned.pack1(term1, True, True)
         paned.pack2(term2, True, True)
         self.pack_start(paned, True, True, 0)
         self.terminal = term1  # Keep reference for compatibility
         term2.grab_focus()  # Focus the new terminal
+        self.show_all()
 
     def create_vertical_split(self):
         """Create two terminals stacked vertically"""
+        # Remove existing terminal
+        if len(self.get_children()) > 0:
+            old_terminal = self.get_children()[0]
+            self.remove(old_terminal)
+            
         paned = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL)
         self.style_paned(paned)
-        term1 = self.create_terminal()
+        term1 = old_terminal if old_terminal else self.create_terminal()
         term2 = self.create_terminal()
         paned.pack1(term1, True, True)
         paned.pack2(term2, True, True)
         self.pack_start(paned, True, True, 0)
         self.terminal = term1  # Keep reference for compatibility
         term2.grab_focus()  # Focus the new terminal
+        self.show_all()
 
     def create_quad_split(self):
         """Create four terminals in a grid layout"""
@@ -236,11 +248,68 @@ class TerminalTab(Gtk.Box):
         )
 
     def on_terminal_exit(self, terminal, status):
-        notebook = self.get_parent()
-        if notebook and notebook.get_n_pages() > 1:
-            notebook.remove_page(notebook.page_num(self))
+        """Handle terminal exit - close tab or window appropriately"""
+        # Remove the exited terminal from our list
+        if terminal in self.terminals:
+            self.terminals.remove(terminal)
+            
+        # Get the parent container of the terminal
+        parent = terminal.get_parent()
+        if not parent:
+            return
+            
+        # If parent is a Paned widget, handle the split view case
+        if isinstance(parent, Gtk.Paned):
+            other_terminal = None
+            # Find the other terminal that's still alive
+            if parent.get_child1() == terminal:
+                other_terminal = parent.get_child2()
+            else:
+                other_terminal = parent.get_child1()
+                
+            if other_terminal:
+                # Get the grandparent (should be the tab box)
+                grandparent = parent.get_parent()
+                if grandparent:
+                    # First remove both terminals from the paned
+                    parent.remove(terminal)
+                    parent.remove(other_terminal)
+                    # Remove the paned from the tab
+                    grandparent.remove(parent)
+                    # Add the remaining terminal directly to the tab
+                    grandparent.pack_start(other_terminal, True, True, 0)
+                    if terminal == self.terminal:
+                        self.terminal = other_terminal
+                    grandparent.show_all()
+                    return
         else:
+            # Remove the terminal from its parent
+            parent.remove(terminal)
+            
+        # If we still have terminals, try to show the next one
+        if self.terminals:
+            new_terminal = self.terminals[0]
+            if new_terminal.get_parent() is None:  # Only pack if it doesn't have a parent
+                self.pack_start(new_terminal, True, True, 0)
+                self.terminal = new_terminal
+                self.show_all()
+            return
+            
+        # If no terminals left, handle tab/window closure
+        notebook = self.get_parent()
+        if not notebook:
+            return
+            
+        page_num = notebook.page_num(self)
+        if page_num == -1:
+            return
+            
+        # If this is the last tab, destroy the window
+        if notebook.get_n_pages() <= 1:
             self.parent_window.destroy()
+        else:
+            # Otherwise just remove this tab
+            notebook.remove_page(page_num)
 
     def on_key_press(self, terminal, event):
         """Handle key events for command hints"""

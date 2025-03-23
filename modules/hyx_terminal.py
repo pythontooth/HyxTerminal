@@ -11,4 +11,4 @@ def __init__(self):
     
     # Set window properties
     self.set_default_size(800, 600)
-    self.set_position(Gtk.WindowPosition.CENTER) 
+    self.set_position(Gtk.WindowPosition.CENTER)
