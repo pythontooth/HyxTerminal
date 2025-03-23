@@ -8,5 +8,27 @@
             "texture_filter": "linear",
             "scroll_acceleration": true
         }
+    },
+    "SSH Manager": {
+        "enabled": true,
+        "settings": {
+            "hosts": {
+                "OPI_ZERO_3": {
+                    "host": "185.212.64.33",
+                    "port": 60022,
+                    "username": "patryk"
+                },
+                "ET_DEB_ICDM": {
+                    "host": "185.212.64.34",
+                    "port": 60022,
+                    "username": "patryk"
+                }
+            },
+            "default_port": 22,
+            "timeout": 10,
+            "keepalive": 60,
+            "use_ssh_agent": true,
+            "default_terminal_profile": "SSH Profile"
+        }
     }
 }
