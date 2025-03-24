@@ -70,9 +70,14 @@ class PluginManager:
         if not os.path.exists(self.plugin_dir):
             os.makedirs(self.plugin_dir)
             
-        for filename in os.listdir(self.plugin_dir):
+        print(f"Loading plugins from: {self.plugin_dir}")
+        plugin_files = [f for f in os.listdir(self.plugin_dir) if f.endswith('.py') and not f.startswith('__')]
+        print(f"Found plugin files: {plugin_files}")
+            
+        for filename in plugin_files:
             if filename.endswith('.py') and not filename.startswith('__'):
                 try:
+                    print(f"Attempting to load plugin: {filename}")
                     module_name = f"modules.plugins.{filename[:-3]}"
                     spec = importlib.util.spec_from_file_location(
                         module_name,
@@ -82,12 +87,15 @@ class PluginManager:
                     spec.loader.exec_module(module)
                     
                     # Find plugin classes in the module
+                    plugin_classes_found = False
                     for name, obj in inspect.getmembers(module):
                         if (inspect.isclass(obj) and 
                             issubclass(obj, Plugin) and 
                             obj != Plugin):
                             plugin = obj()
                             self.plugins[plugin.name] = plugin
+                            plugin_classes_found = True
+                            print(f"Loaded plugin: {plugin.name} from {filename}")
                             
                             # Restore plugin state from settings
                             if plugin.name in self.settings:
@@ -96,8 +104,13 @@ class PluginManager:
                                 
                             if plugin.enabled:
                                 self.enable_plugin(plugin.name)
+                                
+                    if not plugin_classes_found:
+                        print(f"No plugin classes found in {filename}")
                 except Exception as e:
                     print(f"Error loading plugin {filename}: {e}")
+                    import traceback
+                    traceback.print_exc()
                     
     def enable_plugin(self, plugin_name: str) -> bool:
         """Enable a plugin and its dependencies"""
@@ -458,4 +471,126 @@ class Plugins:
             # Save settings
             cls._manager.update_plugin_settings(plugin_name, plugin.settings)
             
+        dialog.destroy()
+    
+    @classmethod
+    def show_command_palette(cls, parent_window):
+        """Show command palette dialog"""
+        if not cls._manager:
+            cls.initialize(parent_window)
+            
+        # Try to find AICommandAgent plugin
+        ai_plugin = None
+        for plugin in cls._manager.get_available_plugins():
+            if plugin.name == "AI Command Agent":
+                ai_plugin = plugin
+                if not plugin.enabled:
+                    cls._manager.enable_plugin(plugin.name)
+                break
+        
+        # If we don't have the plugin, try to import it directly
+        if not ai_plugin:
+            try:
+                print("Plugin not found in manager, trying direct import...")
+                from modules.plugins.ai_command_agent import AICommandAgent
+                ai_plugin = AICommandAgent()
+                ai_plugin.on_enable(parent_window)
+            except Exception as e:
+                print(f"Failed to import AICommandAgent: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        # If we have the AI Command Agent plugin, use it
+        if ai_plugin and hasattr(ai_plugin, 'show_command_dialog'):
+            ai_plugin.show_command_dialog()
+        else:
+            # Fallback: Simple command input dialog
+            cls.show_simple_command_input(parent_window)
+            
+    @classmethod
+    def show_simple_command_input(cls, parent_window):
+        """Show a simple command input dialog as fallback"""
+        dialog = Gtk.Dialog(
+            title="Command Input",
+            parent=parent_window,
+            flags=0
+        )
+        dialog.add_buttons(
+            Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+            Gtk.STOCK_OK, Gtk.ResponseType.OK
+        )
+        
+        # Get current terminal
+        terminal = None
+        current_page = parent_window.notebook.get_current_page()
+        if current_page != -1:
+            tab = parent_window.notebook.get_nth_page(current_page)
+            if hasattr(tab, 'terminals') and tab.terminals:
+                terminal = tab.terminal
+        
+        box = dialog.get_content_area()
+        box.set_spacing(6)
+        box.set_margin_start(10)
+        box.set_margin_end(10)
+        box.set_margin_top(10)
+        box.set_margin_bottom(10)
+        
+        label = Gtk.Label(label="Enter command to run:")
+        box.add(label)
+        
+        entry = Gtk.Entry()
+        entry.set_activates_default(True)
+        box.add(entry)
+        
+        dialog.set_default_response(Gtk.ResponseType.OK)
+        
+        box.show_all()
+        response = dialog.run()
+        
+        if response == Gtk.ResponseType.OK and terminal:
+            command = entry.get_text().strip()
+            if command:
+                terminal.feed_child((command + "\n").encode())
+                
+        dialog.destroy()
+    
+    @classmethod
+    def toggle_smart_completion(cls, widget, parent_window):
+        """Toggle smart command completion"""
+        # Stub implementation - would need to be expanded
+        # to actually toggle some functionality
+        pass
+    
+    @classmethod
+    def show_clipboard_manager(cls, parent_window):
+        """Show clipboard manager dialog"""
+        # Stub implementation - would need to be expanded
+        dialog = Gtk.MessageDialog(
+            parent=parent_window,
+            flags=0,
+            message_type=Gtk.MessageType.INFO,
+            buttons=Gtk.ButtonsType.OK,
+            text="Clipboard Manager"
+        )
+        dialog.format_secondary_text(
+            "The Clipboard Manager is not yet implemented."
+        )
+        dialog.run()
+        dialog.destroy()
+    
+    @classmethod
+    def show_documentation(cls, parent_window):
+        """Show documentation"""
+        # Stub implementation - would need to be expanded
+        dialog = Gtk.MessageDialog(
+            parent=parent_window,
+            flags=0,
+            message_type=Gtk.MessageType.INFO,
+            buttons=Gtk.ButtonsType.OK,
+            text="HyxTerminal Documentation"
+        )
+        dialog.format_secondary_text(
+            "Documentation will be displayed here."
+        )
+        dialog.run()
         dialog.destroy() 

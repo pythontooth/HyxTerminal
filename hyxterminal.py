@@ -391,6 +391,8 @@ class HyxTerminal(Gtk.Window):
     def on_key_press(self, widget, event):
         """Handle keyboard shortcuts"""
         modifiers = event.state & Gtk.accelerator_get_default_mod_mask()
+        keyval = event.keyval
+        keyval_name = Gdk.keyval_name(keyval)
         
         # F10, F11, and F1 keys
         if event.keyval == Gdk.KEY_F11:
@@ -401,6 +403,12 @@ class HyxTerminal(Gtk.Window):
             return True
         elif event.keyval == Gdk.KEY_F1:
             Plugins.show_documentation(self)
+            return True
+        
+        # Check for Ctrl+Space for AI Command Agent
+        if modifiers == Gdk.ModifierType.CONTROL_MASK and keyval_name == "space":
+            # Directly call the command palette (which uses our AI Command Agent)
+            Plugins.show_command_palette(self)
             return True
         
         # Control pressed

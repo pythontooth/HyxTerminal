@@ -1,4 +1,12 @@
 {
+    "AI Command Agent": {
+        "enabled": true,
+        "settings": {
+            "api_key": "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",
+            "max_context_lines": 20,
+            "model": "llama3-70b-8192"
+        }
+    },
     "GPU Acceleration": {
         "enabled": false,
         "settings": {
@@ -10,7 +18,7 @@
         }
     },
     "SSH Manager": {
-        "enabled": true,
+        "enabled": false,
         "settings": {
             "hosts": {
                 "OPI_ZERO_3": {

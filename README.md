@@ -27,6 +27,7 @@ HyxTerminal is a feature-rich terminal emulator designed for modern workflows. I
   - Command auto-completion hints
   - Command palette for quick access to functions
   - Clipboard manager with history
+  - **AI Command Agent** - Generate terminal commands from natural language
   
 - **Modern Interface**
   - Customizable appearance (themes, colors, opacity)
@@ -45,6 +46,9 @@ HyxTerminal is a feature-rich terminal emulator designed for modern workflows. I
 - GTK 3.0
 - VTE 2.91
 - PyGObject
+- For AI features:
+  - requests
+  - python-dotenv
 
 ## Installation
 
@@ -56,6 +60,9 @@ sudo apt-get install python3 python3-gi gir1.2-gtk-3.0 gir1.2-vte-2.91
 
 # Fedora
 sudo dnf install python3 python3-gobject gtk3 vte291
+
+# Python dependencies
+pip install requests python-dotenv
 ```
 
 2. Clone the repository:
@@ -76,6 +83,7 @@ python3 hyxterminal.py
 - `Ctrl+Shift+T`: New tab
 - `Ctrl+Shift+C`: Copy selected text
 - `Ctrl+Shift+V`: Paste from clipboard
+- `Ctrl+Space`: Activate AI Command Builder
 
 ## Configuration
 
@@ -104,6 +112,9 @@ Configuration is stored in `~/.config/hyxterminal/config.json`. Settings include
   - Configurable scrollback buffer
   - Multiple cursor shapes
   - Copy/paste support
+
+- AI Features
+  - **AI Command Agent**: Enter instructions in plain English and get terminal commands. Activated with Ctrl+Space.
 
 ## Contributing
 
