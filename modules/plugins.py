@@ -479,10 +479,10 @@ class Plugins:
         if not cls._manager:
             cls.initialize(parent_window)
             
-        # Try to find AICommandAgent plugin
+        # Try to find HyxAgent plugin
         ai_plugin = None
         for plugin in cls._manager.get_available_plugins():
-            if plugin.name == "AI Command Agent":
+            if plugin.name == "HyxAgent":
                 ai_plugin = plugin
                 if not plugin.enabled:
                     cls._manager.enable_plugin(plugin.name)
@@ -492,15 +492,15 @@ class Plugins:
         if not ai_plugin:
             try:
                 print("Plugin not found in manager, trying direct import...")
-                from modules.plugins.ai_command_agent import AICommandAgent
-                ai_plugin = AICommandAgent()
+                from modules.plugins.HyxAgent import HyxAgent
+                ai_plugin = HyxAgent()
                 ai_plugin.on_enable(parent_window)
             except Exception as e:
-                print(f"Failed to import AICommandAgent: {e}")
+                print(f"Failed to import HyxAgent: {e}")
                 import traceback
                 traceback.print_exc()
         
-        # If we have the AI Command Agent plugin, use it
+        # If we have the HyxAgent plugin, use it
         if ai_plugin and hasattr(ai_plugin, 'show_command_dialog'):
             ai_plugin.show_command_dialog()
         else:

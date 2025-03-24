@@ -1,10 +1,11 @@
 {
-    "AI Command Agent": {
+    "HyxAgent": {
         "enabled": true,
         "settings": {
             "api_key": "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",
             "max_context_lines": 20,
-            "model": "llama3-70b-8192"
+            "model": "llama3-70b-8192",
+            "agent_mode": true
         }
     },
     "GPU Acceleration": {
@@ -20,18 +21,7 @@
     "SSH Manager": {
         "enabled": false,
         "settings": {
-            "hosts": {
-                "OPI_ZERO_3": {
-                    "host": "185.212.64.33",
-                    "port": 60022,
-                    "username": "patryk"
-                },
-                "ET_DEB_ICDM": {
-                    "host": "185.212.64.34",
-                    "port": 60022,
-                    "username": "patryk"
-                }
-            },
+            "hosts": {},
             "default_port": 22,
             "timeout": 10,
             "keepalive": 60,
